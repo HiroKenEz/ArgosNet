@@ -1,0 +1,13 @@
+# ArgosNet — dépendances principales
+PySide6>=6.6          # GUI Qt6 (LGPL)
+scapy>=2.5            # capture, forge, scan, dissection de paquets
+pyqtgraph>=0.13       # graphes temps réel pour le dashboard
+mac-vendor-lookup>=0.1.12  # résolution constructeur depuis l'adresse MAC (OUI)
+PyYAML>=6.0           # chargement des règles de détection (rules.yaml)
+
+# Optionnel — activé seulement si le binaire nmap est présent sur la machine
+python-nmap>=0.7.1
+
+# Outillage de développement (packaging / tests)
+# pyinstaller>=6.0
+# pytest>=8.0

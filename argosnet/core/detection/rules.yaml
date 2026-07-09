@@ -1,0 +1,40 @@
+# Règles de signature du mini-IDS d'ArgosNet.
+#
+# Chaque règle peut combiner :
+#   dst_port : port de destination TCP/UDP à surveiller
+#   contains : sous-chaîne recherchée dans la charge utile (insensible à la casse)
+#   severity : info | warning | critical
+#   message  : texte affiché dans l'alerte
+#
+# Ajoutez vos propres règles ici : elles sont chargées au démarrage, sans toucher au code.
+
+rules:
+  - name: "Port Metasploit (4444)"
+    dst_port: 4444
+    severity: critical
+    message: "Connexion vers le port 4444, souvent utilisé par Meterpreter / Metasploit."
+
+  - name: "Back Orifice (31337)"
+    dst_port: 31337
+    severity: critical
+    message: "Trafic vers le port 31337, associé à d'anciens chevaux de Troie (Back Orifice)."
+
+  - name: "Telnet en clair (23)"
+    dst_port: 23
+    severity: warning
+    message: "Trafic Telnet : protocole d'administration non chiffré."
+
+  - name: "IRC — canal de commande potentiel (6667)"
+    dst_port: 6667
+    severity: warning
+    message: "Trafic IRC (6667), parfois utilisé comme canal de commande de botnet."
+
+  - name: "Commande shell dans la charge utile"
+    contains: "cmd.exe /c"
+    severity: warning
+    message: "Motif d'exécution de commande Windows détecté dans le trafic."
+
+  - name: "Téléchargement PowerShell encodé"
+    contains: "powershell -enc"
+    severity: critical
+    message: "Commande PowerShell encodée détectée : technique d'exécution furtive courante."

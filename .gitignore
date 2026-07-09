@@ -1,0 +1,27 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Caches Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Packaging (dossiers de sortie ; argosnet.spec est versionné volontairement)
+build/
+dist/
+build_nuitka/
+release/
+nuitka_build.log
+
+# Données locales générées
+*.sqlite
+*.db
+captures/*.pcap
+
+# Divers OS / éditeurs
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
