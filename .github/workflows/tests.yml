@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurer Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Installer les dépendances de test
+        # La logique cœur (dissection, filtres, détection, stats) ne dépend que de
+        # Scapy et PyYAML — ni PySide6 ni Npcap ne sont nécessaires pour les tests.
+        run: python -m pip install --upgrade pip scapy PyYAML pytest
+
+      - name: Lancer la suite de tests
+        run: python -m pytest tests/ -v

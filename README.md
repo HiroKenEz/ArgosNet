@@ -1,10 +1,27 @@
 # ArgosNet
 
+[![Tests](https://github.com/HiroKenEz/ArgosNet/actions/workflows/tests.yml/badge.svg)](https://github.com/HiroKenEz/ArgosNet/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Licence](https://img.shields.io/badge/licence-GPL--3.0-green)
+![Plateforme](https://img.shields.io/badge/plateforme-Windows-lightgrey)
+
 **Analyseur réseau local type Wireshark** — capture et analyse de paquets, scan/cartographie
 du réseau, détection de menaces (mini-IDS) et tableau de bord statistique, dans une
 application desktop Windows.
 
 > Nommé d'après **Argos Panoptès**, le géant aux cent yeux de la mythologie grecque : le veilleur qui ne dort jamais.
+
+## Aperçu
+
+![Capture et analyse de paquets](docs/screenshot.png)
+
+*Capture et analyse de paquets (thème sombre) : liste colorée par protocole, décodage
+multi-couches et vue hexadécimale synchronisée.*
+
+![Détection de menaces](docs/screenshot_alertes.png)
+
+*Le mini-IDS en action : alertes classées par gravité — ARP spoofing, scan de ports,
+balayage réseau, SYN flood, identifiants en clair, signatures YAML.*
 
 ---
 
