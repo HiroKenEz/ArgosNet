@@ -48,6 +48,11 @@ class Database:
             );
             """
         )
+        # Migration : colonne « label » (libellé personnalisé) ajoutée après coup.
+        try:
+            self._conn.execute("ALTER TABLE devices ADD COLUMN label TEXT")
+        except Exception:
+            pass  # la colonne existe déjà
         self._conn.commit()
 
     # ------------------------------------------------------------- alertes
@@ -127,6 +132,20 @@ class Database:
     def known_macs(self) -> set[str]:
         rows = self._conn.execute("SELECT mac FROM devices").fetchall()
         return {row["mac"] for row in rows}
+
+    def list_devices(self) -> list[dict]:
+        """Liste des appareils connus (plus récemment vus d'abord)."""
+        rows = self._conn.execute(
+            "SELECT mac, ip, vendor, hostname, label, first_seen, last_seen "
+            "FROM devices ORDER BY last_seen DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_device_label(self, mac: str, label: str) -> None:
+        self._conn.execute(
+            "UPDATE devices SET label = ? WHERE mac = ?", (label, mac.lower())
+        )
+        self._conn.commit()
 
     def clear_devices(self) -> None:
         self._conn.execute("DELETE FROM devices")

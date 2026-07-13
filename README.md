@@ -89,8 +89,14 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 | **Détection de menaces** | ARP spoofing, scans, nouvel appareil, mini-IDS à règles YAML |
 | **Statistiques** | Débit temps réel, répartition par protocole, top talkers |
 | **Carte réseau** | Graphe nœud-lien des hôtes et de leurs échanges (local vs externe) |
+| **Conversations** | Paires d'hôtes triées par volume |
+| **Inventaire** | Appareils connus (MAC / IP / constructeur / vu le), **libellés personnalisés** |
+| **Follow Stream** | Réassemblage d'un flux TCP (clic droit sur un paquet) |
 | **Historique** | Persistance SQLite des alertes et des appareils connus, export CSV |
 | **Thème** | Interface claire ou sombre (menu **Affichage**), sombre par défaut |
+
+Décodeurs : Ethernet/ARP, IPv4/IPv6, TCP/UDP/ICMP, **DNS/mDNS**, **DHCP**, **HTTP**
+(méthode/URL/host) et **TLS** (extraction du SNI).
 
 L'historique est stocké dans `~/.argosnet/argosnet.sqlite` : les alertes survivent aux
 redémarrages, et un appareil déjà connu ne redéclenche pas d'alerte « nouvel appareil ».

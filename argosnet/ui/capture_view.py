@@ -48,6 +48,14 @@ from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.ui.packet_model import PacketTableModel, make_record
 from argosnet.ui.widgets.hexview import HexView
 
+def _has_tcp(packet) -> bool:
+    try:
+        from scapy.layers.inet import TCP
+        return packet.haslayer(TCP)
+    except Exception:
+        return False
+
+
 FILTERS_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "filters.json")
 BUILTIN_FILTERS = [
     "dns", "arp", "icmp", "proto==tcp", "proto==udp",
@@ -490,10 +498,26 @@ class CaptureView(QWidget):
             menu.addAction(f"Filtrer la destination  {s.dst}", lambda: self._set_filter(f"ip.dst=={s.dst}"))
         menu.addAction(f"Filtrer le protocole  {s.protocol}",
                        lambda: self._set_filter(f"proto=={s.protocol.lower()}"))
+        if _has_tcp(record.packet):
+            menu.addSeparator()
+            menu.addAction("Suivre le flux TCP", lambda: self._follow_stream(record.packet))
         menu.addSeparator()
         menu.addAction("Copier la ligne", lambda: self._copy_to_clipboard(self._row_text(record)))
         menu.addAction("Copier l'info", lambda: self._copy_to_clipboard(s.info))
         menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _follow_stream(self, packet) -> None:
+        from argosnet.core.follow import follow_tcp_stream
+        from argosnet.ui.widgets.follow_dialog import FollowStreamDialog
+
+        stream = follow_tcp_stream(self._model.all_packets(), packet)
+        if stream is None or not stream.segments:
+            QMessageBox.information(
+                self, "Suivre le flux",
+                "Aucune donnée applicative à réassembler pour ce flux TCP.",
+            )
+            return
+        FollowStreamDialog(stream, self).exec()
 
     def _set_filter(self, expr: str) -> None:
         self._filter_edit.setText(expr)

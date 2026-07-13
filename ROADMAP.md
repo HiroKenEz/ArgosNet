@@ -41,15 +41,16 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] **Résumé de capture** (menu Statistiques : durée, pps moyen, hiérarchie des protocoles).
 
 ### 🎯 Fortes valeurs
-- [ ] **Suivre le flux TCP/HTTP** (Follow Stream, réassemblage).
-- [ ] **Onglet Inventaire des appareils** (base SQLite : MAC, IP, constructeur, vu le/dernier,
-      libellé personnalisé).
+- [x] **Suivre le flux TCP** (Follow Stream, réassemblage — clic droit sur un paquet TCP).
+- [x] **Onglet Inventaire des appareils** (base SQLite : MAC, IP, constructeur, vu le/dernier,
+      **libellé personnalisé** éditable).
+- [x] **Onglet Conversations** (paires d'hôtes triées par volume).
+- [x] **Décodeurs enrichis** : HTTP (méthode/URL/host), TLS (SNI), DHCP, mDNS.
 - [ ] **Éditeur de règles IDS** dans l'UI (au lieu d'éditer `rules.yaml`).
-- [ ] **Onglet Conversations + IO Graph** (à la Wireshark).
+- [ ] **IO Graph** (débit par protocole dans le temps, à la Wireshark).
 - [ ] **Export rapport HTML/PDF** d'une session (stats + alertes + top talkers).
 - [ ] **Règles de coloration personnalisables**.
-- [ ] **Décodeurs enrichis** : HTTP (méthode/URL/host), TLS (SNI/JA3), DHCP, mDNS.
-- [ ] **GeoIP / ASN** pour les IP externes (carte + liste).
+- [ ] **TLS JA3** et **GeoIP / ASN** pour les IP externes (carte + liste).
 
 ### 🚀 Ambitieux
 - [ ] **Détection étendue** : DNS tunneling, *beaconing* C2 (périodicité), rogue DHCP,

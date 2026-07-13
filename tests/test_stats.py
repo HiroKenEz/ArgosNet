@@ -20,7 +20,9 @@ def test_totals():
 
 def test_protocol_breakdown():
     breakdown = dict(_engine().protocol_breakdown())
-    assert breakdown.get("TCP") == 3
+    # p1/p2 = TCP (SYN/SYN-ACK sans charge utile) ; p3 = HTTP (décodeur enrichi).
+    assert breakdown.get("TCP") == 2
+    assert breakdown.get("HTTP") == 1
 
 
 def test_top_talkers():
@@ -43,7 +45,7 @@ def test_reset():
 def test_summary():
     s = _engine().summary()
     assert s["total_packets"] == 9
-    assert dict(s["protocols"]).get("TCP") == 3
+    assert dict(s["protocols"]).get("TCP") == 2
     assert s["duration"] >= 1
     assert s["distinct_talkers"] > 0
 

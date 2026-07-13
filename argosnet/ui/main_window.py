@@ -30,7 +30,9 @@ from argosnet.core.detection.engine import DetectionEngine
 from argosnet.core.storage import Database
 from argosnet.ui.alerts_view import AlertsView
 from argosnet.ui.capture_view import CaptureView
+from argosnet.ui.conversations_view import ConversationsView
 from argosnet.ui.dashboard_view import DashboardView
+from argosnet.ui.devices_view import DevicesView
 from argosnet.ui.network_map_view import NetworkMapView
 from argosnet.ui.scan_view import ScanView
 
@@ -54,6 +56,8 @@ class MainWindow(QMainWindow):
         self.scan_view = ScanView()
         self.dashboard_view = DashboardView()
         self.network_map_view = NetworkMapView()
+        self.conversations_view = ConversationsView()
+        self.devices_view = DevicesView(self._db)
         self.alerts_view = AlertsView()
         self._detection = DetectionEngine()
 
@@ -64,20 +68,26 @@ class MainWindow(QMainWindow):
         # l'effacement réinitialise dashboard et carte (l'historique persiste en base).
         self.capture_view.packets_added.connect(self.dashboard_view.on_packets)
         self.capture_view.packets_added.connect(self.network_map_view.on_packets)
+        self.capture_view.packets_added.connect(self.conversations_view.on_packets)
         self.capture_view.packets_added.connect(self._run_detection)
         self.capture_view.cleared.connect(self.dashboard_view.reset)
         self.capture_view.cleared.connect(self.network_map_view.reset)
+        self.capture_view.cleared.connect(self.conversations_view.reset)
         self.capture_view.cleared.connect(self._reset_detection)
         self.scan_view.device_found.connect(self._db.record_device)
+        self.scan_view.device_found.connect(lambda *a: self.devices_view.refresh())
         self.alerts_view.counts_changed.connect(self._update_alert_tab)
         self.alerts_view.jump_to_packet.connect(self._jump_to_packet)
 
         self.tabs.addTab(self._build_interfaces_tab(), "Interfaces")
         self.tabs.addTab(self.capture_view, "Capture")
         self.tabs.addTab(self.scan_view, "Scan")
+        self.tabs.addTab(self.devices_view, "Appareils")
         self.tabs.addTab(self.dashboard_view, "Dashboard")
+        self.tabs.addTab(self.conversations_view, "Conversations")
         self.tabs.addTab(self.network_map_view, "Carte")
         self._alerts_tab_index = self.tabs.addTab(self.alerts_view, "Alertes")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self._setup_notifications()
         self._build_menu()
@@ -160,6 +170,11 @@ class MainWindow(QMainWindow):
             self._tray.hide()
         super().closeEvent(event)
 
+    def _on_tab_changed(self, _index: int) -> None:
+        # Rafraîchit l'inventaire quand on ouvre son onglet (données en base).
+        if self.tabs.currentWidget() is self.devices_view:
+            self.devices_view.refresh()
+
     def _jump_to_packet(self, number: int) -> None:
         """Depuis une alerte : bascule sur la capture et sélectionne le paquet."""
         self.tabs.setCurrentWidget(self.capture_view)
@@ -206,9 +221,13 @@ class MainWindow(QMainWindow):
         self.alerts_view.add_alerts(alerts)
         self._db.save_alerts(alerts)
         # Enregistre les appareils nouvellement découverts (source = MAC).
+        new_device = False
         for alert in alerts:
             if alert.category == "Nouvel appareil":
                 self._db.record_device(alert.source)
+                new_device = True
+        if new_device:
+            self.devices_view.refresh()
         criticals = [a for a in alerts if a.severity.name == "CRITICAL"]
         if criticals:
             self.statusBar().showMessage(
