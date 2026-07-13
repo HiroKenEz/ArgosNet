@@ -28,6 +28,12 @@ def test_ip_addr():
     assert _count("ip.addr==8.8.8.8") == 2
 
 
+def test_ip_addr_is_exact_not_substring():
+    # « ip.addr==192.168.1.1 » ne doit PAS matcher 192.168.1.10 (bug de sous-chaîne).
+    # 5 paquets contiennent exactement 192.168.1.1 ; les 3 qui n'ont que .10 sont exclus.
+    assert _count("ip.addr==192.168.1.1") == 5
+
+
 def test_tcp_port():
     assert _count("tcp.port==443") == 2
 

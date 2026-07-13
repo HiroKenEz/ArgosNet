@@ -70,14 +70,17 @@ def _compile_single(term: str) -> Predicate:
 
 def _eval_field(record, field: str, value: str) -> bool:
     s = record.summary
+    src, dst = s.src.lower(), s.dst.lower()
     if field in ("proto", "protocol"):
         return s.protocol.lower() == value
+    # Comparaison EXACTE pour les adresses (« ip.addr==192.168.1.1 » ne doit pas
+    # matcher 192.168.1.10). Pour une correspondance partielle, utiliser un terme nu.
     if field == "ip.addr":
-        return value in s.src.lower() or value in s.dst.lower()
+        return value in (src, dst)
     if field == "ip.src":
-        return value in s.src.lower()
+        return value == src
     if field == "ip.dst":
-        return value in s.dst.lower()
+        return value == dst
     if field in ("tcp.port", "udp.port", "port"):
         return _matches_port(record, field, value)
     return False

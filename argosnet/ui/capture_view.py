@@ -6,7 +6,7 @@ déléguée à :class:`argosnet.core.capture.CaptureController`.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QModelIndex, QSortFilterProxyModel, Qt, QTimer, Signal
+from PySide6.QtCore import QModelIndex, QSortFilterProxyModel, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QTableView,
@@ -31,7 +32,34 @@ from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.ui.packet_model import PacketTableModel, make_record
 from argosnet.ui.widgets.hexview import HexView
 
-DRAIN_INTERVAL_MS = 250  # cadence de récupération des paquets depuis le sniffer
+DRAIN_INTERVAL_MS = 250   # cadence de récupération des paquets depuis le sniffer
+FILTER_DEBOUNCE_MS = 200  # délai avant application du filtre d'affichage après frappe
+
+
+class PcapLoader(QThread):
+    """Lit un .pcap et construit les enregistrements hors du thread GUI.
+
+    ``rdpcap`` et la dissection de chaque paquet (``make_record``) sont exécutés dans
+    ce thread pour ne pas geler l'interface sur les fichiers volumineux.
+    """
+
+    loaded = Signal(list)   # list[PacketRecord]
+    failed = Signal(str)
+
+    def __init__(self, path: str, base_number: int) -> None:
+        super().__init__()
+        self._path = path
+        self._base = base_number
+
+    def run(self) -> None:
+        try:
+            from scapy.utils import rdpcap
+            packets = list(rdpcap(self._path))
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+            return
+        records = [make_record(self._base + i, pkt) for i, pkt in enumerate(packets)]
+        self.loaded.emit(records)
 
 
 class PacketFilterProxy(QSortFilterProxyModel):
@@ -76,6 +104,13 @@ class CaptureView(QWidget):
         self._timer.setInterval(DRAIN_INTERVAL_MS)
         self._timer.timeout.connect(self._drain)
 
+        # Anti-rebond du filtre d'affichage : n'applique le filtre qu'après une
+        # courte pause de frappe, pour ne pas réévaluer tous les paquets à chaque touche.
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(FILTER_DEBOUNCE_MS)
+        self._filter_timer.timeout.connect(self._apply_filter)
+
         self._build_ui()
         self._reload_interfaces()
 
@@ -107,7 +142,7 @@ class CaptureView(QWidget):
         bar2.addWidget(QLabel("Filtre d'affichage :"))
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText("ex. dns, ip.addr==192.168.1.1, tcp.port==443…")
-        self._filter_edit.textChanged.connect(self._apply_filter)
+        self._filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
         bar2.addWidget(self._filter_edit, 1)
         self._count_label = QLabel("0 paquet")
         bar2.addWidget(self._count_label)
@@ -224,19 +259,27 @@ class CaptureView(QWidget):
             self.load_pcap(path)
 
     def load_pcap(self, path: str) -> None:
-        """Charge un fichier .pcap dans la liste (même chemin qu'une capture live)."""
-        try:
-            from scapy.utils import rdpcap
-            packets = list(rdpcap(path))
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Lecture impossible", f"Fichier illisible :\n{exc}")
-            return
-        base = self._model.next_number()
-        records = [make_record(base + i, pkt) for i, pkt in enumerate(packets)]
+        """Charge un fichier .pcap en arrière-plan (ne gèle pas la GUI)."""
+        self._loader = PcapLoader(path, self._model.next_number())
+        self._progress = QProgressDialog("Lecture de la capture…", None, 0, 0, self)
+        self._progress.setWindowTitle("Chargement")
+        self._progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self._progress.setCancelButton(None)
+        self._progress.setMinimumDuration(0)
+        self._loader.loaded.connect(self._on_pcap_loaded)
+        self._loader.failed.connect(self._on_pcap_failed)
+        self._loader.finished.connect(self._progress.close)
+        self._loader.start()
+        self._progress.show()
+
+    def _on_pcap_loaded(self, records: list) -> None:
         self._model.append_records(records)
         self._update_count()
-        if packets:
-            self.packets_added.emit(packets)
+        if records:
+            self.packets_added.emit([r.packet for r in records])
+
+    def _on_pcap_failed(self, message: str) -> None:
+        QMessageBox.critical(self, "Lecture impossible", f"Fichier illisible :\n{message}")
 
     def save_pcap_dialog(self) -> None:
         if self._model.rowCount() == 0:
@@ -254,8 +297,8 @@ class CaptureView(QWidget):
             QMessageBox.critical(self, "Écriture impossible", f"Échec de l'enregistrement :\n{exc}")
 
     # -------------------------------------------------------------- filtre
-    def _apply_filter(self, text: str) -> None:
-        self._proxy.set_filter(text)
+    def _apply_filter(self) -> None:
+        self._proxy.set_filter(self._filter_edit.text())
         self._update_count()
 
     def _clear(self) -> None:

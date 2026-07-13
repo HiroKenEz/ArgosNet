@@ -1,5 +1,8 @@
 """Tests du moteur de détection (mini-IDS)."""
 from fixtures import build_attack_packets, build_sample_packets
+from scapy.layers.inet import IP, TCP
+from scapy.layers.l2 import Ether
+from scapy.packet import Raw
 
 from argosnet.core.detection.alert import Severity
 from argosnet.core.detection.engine import DetectionEngine
@@ -43,3 +46,20 @@ def test_reset_clears_state():
 def test_packet_numbers_assigned():
     alerts = DetectionEngine().feed(build_attack_packets())
     assert all(a.packet_number is not None for a in alerts)
+
+
+def test_cleartext_creds_deduplicated():
+    # Deux requêtes HTTP Basic sur la même connexion → une seule alerte (pas de spam).
+    def http_basic(i):
+        pkt = (
+            Ether(src="02:aa:aa:aa:aa:aa", dst="02:bb:bb:bb:bb:bb")
+            / IP(src="192.168.1.60", dst="1.2.3.4")
+            / TCP(sport=52000 + i, dport=80, flags="PA")
+            / Raw(b"GET / HTTP/1.1\r\nAuthorization: Basic dXNlcjpwYXNz\r\n\r\n")
+        )
+        pkt.time = 1000.0 + i
+        return pkt
+
+    alerts = DetectionEngine().feed([http_basic(0), http_basic(1)])
+    creds = [a for a in alerts if a.category == "Identifiants en clair"]
+    assert len(creds) == 1

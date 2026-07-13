@@ -1,8 +1,9 @@
 """Fenêtre principale d'ArgosNet.
 
-Contient la mise en page à onglets. En Phase 0, seul l'onglet « Interfaces » est
-fonctionnel ; les autres onglets sont des emplacements réservés remplis dans les
-phases suivantes.
+Compose les onglets (Interfaces, Capture, Scan, Dashboard, Carte, Alertes) et joue le
+rôle de racine d'assemblage : le flux de paquets de la vue de capture est distribué au
+dashboard, à la carte réseau et au moteur de détection, dont les alertes sont affichées
+et persistées en base SQLite.
 """
 from __future__ import annotations
 

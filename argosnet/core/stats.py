@@ -11,6 +11,10 @@ from dataclasses import dataclass
 
 from argosnet.core.dissect import _endpoints, _highest_protocol, packet_length
 
+# Durée (en secondes) conservée pour la courbe de débit. Borne la mémoire et le coût
+# de reconstruction de la série sur une capture live de longue durée (jusqu'à 1 h).
+THROUGHPUT_WINDOW = 3600
+
 
 @dataclass
 class Talker:
@@ -31,6 +35,7 @@ class StatsEngine:
         self.per_second_packets: dict[int, int] = defaultdict(int)
         self.per_second_bytes: dict[int, int] = defaultdict(int)
         self._t0: float | None = None
+        self._max_bucket: int = 0
 
     # ------------------------------------------------------------- ingestion
     def add_packet(self, packet) -> None:
@@ -59,6 +64,15 @@ class StatsEngine:
         self.per_second_packets[bucket] += 1
         self.per_second_bytes[bucket] += length
 
+        # Purge des secondes trop anciennes (fenêtre glissante) quand le temps avance.
+        if bucket > self._max_bucket:
+            self._max_bucket = bucket
+            cutoff = bucket - THROUGHPUT_WINDOW
+            if cutoff > 0:
+                for old in [b for b in self.per_second_packets if b < cutoff]:
+                    del self.per_second_packets[old]
+                    self.per_second_bytes.pop(old, None)
+
     def add_packets(self, packets) -> None:
         for packet in packets:
             self.add_packet(packet)
@@ -83,11 +97,12 @@ class StatsEngine:
         ]
 
     def throughput_series(self) -> tuple[list[int], list[int], list[float]]:
-        """Retourne (secondes, paquets/s, Ko/s) sur toute la durée observée."""
+        """Retourne (secondes, paquets/s, Ko/s) sur la fenêtre glissante conservée."""
         if not self.per_second_packets:
             return [], [], []
         last = max(self.per_second_packets)
-        seconds = list(range(0, last + 1))
+        first = max(min(self.per_second_packets), last - THROUGHPUT_WINDOW + 1)
+        seconds = list(range(first, last + 1))
         pps = [self.per_second_packets.get(s, 0) for s in seconds]
         kbps = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
         return seconds, pps, kbps

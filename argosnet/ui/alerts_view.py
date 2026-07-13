@@ -27,6 +27,10 @@ from argosnet.core.detection.alert import Alert, Severity
 
 COLUMNS = ["Heure", "Gravité", "Catégorie", "Source", "N° paquet", "Détail"]
 
+# Nombre maximum d'alertes affichées (les plus anciennes sont retirées de la vue ;
+# l'historique complet reste consultable dans la base SQLite).
+MAX_DISPLAY_ALERTS = 2000
+
 
 class AlertsView(QWidget):
     # (total, nombre de critiques) — permet de mettre à jour le libellé de l'onglet.
@@ -71,8 +75,17 @@ class AlertsView(QWidget):
         for alert in alerts:
             self._insert_alert(alert)
             self._alerts.append(alert)
+        self._trim()
         if alerts:
             self._update_summary()
+
+    def _trim(self) -> None:
+        """Borne l'affichage : retire les alertes les plus anciennes au-delà du plafond."""
+        overflow = len(self._alerts) - MAX_DISPLAY_ALERTS
+        if overflow > 0:
+            del self._alerts[:overflow]
+            for _ in range(overflow):  # les plus anciennes sont en bas de la table
+                self._table.removeRow(self._table.rowCount() - 1)
 
     def reset(self) -> None:
         self._table.setRowCount(0)

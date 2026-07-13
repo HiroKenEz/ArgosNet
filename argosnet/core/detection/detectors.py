@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover
 # Seuils par défaut (ajustables). Fenêtres en secondes.
 PORTSCAN_WINDOW = 5.0
 PORTSCAN_PORTS = 15        # ports distincts sur une même cible → scan de ports
+HOSTSWEEP_WINDOW = 5.0
 HOSTSWEEP_HOSTS = 15       # hôtes distincts balayés → balayage réseau
 SYNFLOOD_WINDOW = 3.0
 SYNFLOOD_COUNT = 100       # SYN vers une même cible dans la fenêtre → flood
@@ -31,9 +32,25 @@ SYNFLOOD_COUNT = 100       # SYN vers une même cible dans la fenêtre → flood
 SYN = 0x02
 ACK = 0x10
 
+# Purge périodique des fenêtres glissantes : évite que les dictionnaires d'état
+# accumulent une clé par IP vue « à vie » lors d'une capture longue durée.
+CLEANUP_EVERY = 2000
+
 
 def _pkt_time(pkt: Any) -> float:
     return float(getattr(pkt, "time", 0.0) or 0.0)
+
+
+def _prune_events(events: dict, now: float, window: float, time_of) -> None:
+    """Vide les entrées expirées et supprime les clés dont la fenêtre est vide."""
+    stale = []
+    for key, dq in events.items():
+        while dq and now - time_of(dq[0]) > window:
+            dq.popleft()
+        if not dq:
+            stale.append(key)
+    for key in stale:
+        del events[key]
 
 
 class Detector:
@@ -94,6 +111,7 @@ class PortScanDetector(Detector):
         # src -> deque[(time, dst, dport)]
         self.events: dict[str, deque] = defaultdict(deque)
         self._alerted: set[str] = set()
+        self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
@@ -105,6 +123,10 @@ class PortScanDetector(Detector):
         src = pkt.getlayer(IP).src
         dst = pkt.getlayer(IP).dst
         now = _pkt_time(pkt)
+
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            _prune_events(self.events, now, PORTSCAN_WINDOW, lambda e: e[0])
 
         window = self.events[src]
         window.append((now, dst, int(tcp.dport)))
@@ -139,6 +161,7 @@ class HostSweepDetector(Detector):
     def __init__(self) -> None:
         self.events: dict[str, deque] = defaultdict(deque)
         self._alerted: set[str] = set()
+        self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         src = dst = None
@@ -157,9 +180,13 @@ class HostSweepDetector(Detector):
         if not src or not dst:
             return []
 
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            _prune_events(self.events, now, HOSTSWEEP_WINDOW, lambda e: e[0])
+
         window = self.events[src]
         window.append((now, dst))
-        while window and now - window[0][0] > PORTSCAN_WINDOW:
+        while window and now - window[0][0] > HOSTSWEEP_WINDOW:
             window.popleft()
         hosts = {d for _, d in window}
         if len(hosts) >= HOSTSWEEP_HOSTS and src not in self._alerted:
@@ -186,6 +213,7 @@ class SynFloodDetector(Detector):
     def __init__(self) -> None:
         self.events: dict[str, deque] = defaultdict(deque)
         self._alerted: set[str] = set()
+        self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
@@ -195,6 +223,11 @@ class SynFloodDetector(Detector):
             return []
         dst = pkt.getlayer(IP).dst
         now = _pkt_time(pkt)
+
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            _prune_events(self.events, now, SYNFLOOD_WINDOW, lambda e: e)
+
         window = self.events[dst]
         window.append(now)
         while window and now - window[0] > SYNFLOOD_WINDOW:
@@ -267,18 +300,26 @@ class CleartextCredsDetector(Detector):
         except Exception:
             return []
         low = payload.lower()
-        reason = None
+        reason = kind = None
         if b"authorization: basic " in low:
             reason = "En-tête HTTP « Authorization: Basic » (identifiants encodés en base64)."
+            kind = "http-basic"
         elif low.startswith(b"user ") or b"\nuser " in low:
             if pkt.haslayer(TCP) and int(pkt.getlayer(TCP).dport) in (21, 23):
-                reason = "Commande FTP/Telnet USER en clair."
+                reason, kind = "Commande FTP/Telnet USER en clair.", "ftp-user"
         elif low.startswith(b"pass ") or b"\npass " in low:
             if pkt.haslayer(TCP) and int(pkt.getlayer(TCP).dport) in (21, 23):
-                reason = "Commande FTP/Telnet PASS (mot de passe en clair)."
+                reason, kind = "Commande FTP/Telnet PASS (mot de passe en clair).", "ftp-pass"
         if reason is None:
             return []
         src = pkt.getlayer(IP).src if pkt.haslayer(IP) else "?"
+        dst = pkt.getlayer(IP).dst if pkt.haslayer(IP) else "?"
+        # Une seule alerte par (source, destination, type) : évite le spam sur une
+        # session répétant le même en-tête d'authentification.
+        key = hash((src, dst, kind))
+        if key in self._alerted:
+            return []
+        self._alerted.add(key)
         return [
             Alert(
                 severity=Severity.WARNING,
