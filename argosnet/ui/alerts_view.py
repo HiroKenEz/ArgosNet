@@ -35,6 +35,8 @@ MAX_DISPLAY_ALERTS = 2000
 class AlertsView(QWidget):
     # (total, nombre de critiques) — permet de mettre à jour le libellé de l'onglet.
     counts_changed = Signal(int, int)
+    # Numéro du paquet concerné (double-clic sur une alerte) → saut dans la capture.
+    jump_to_packet = Signal(int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -64,6 +66,8 @@ class AlertsView(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setWordWrap(True)
+        self._table.setToolTip("Double-cliquez une alerte pour voir le paquet concerné.")
+        self._table.cellDoubleClicked.connect(self._on_double_click)
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         for col in (0, 1, 2, 3, 4):
@@ -78,6 +82,11 @@ class AlertsView(QWidget):
         self._trim()
         if alerts:
             self._update_summary()
+
+    def _on_double_click(self, row: int, _col: int) -> None:
+        item = self._table.item(row, 4)  # colonne « N° paquet »
+        if item and item.text().isdigit():
+            self.jump_to_packet.emit(int(item.text()))
 
     def _trim(self) -> None:
         """Borne l'affichage : retire les alertes les plus anciennes au-delà du plafond."""

@@ -6,19 +6,35 @@ déléguée à :class:`argosnet.core.capture.CaptureController`.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QModelIndex, QSortFilterProxyModel, Qt, QThread, QTimer, Signal
+import json
+import os
+
+from PySide6.QtCore import (
+    QModelIndex,
+    QSortFilterProxyModel,
+    QStringListModel,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
+    QCompleter,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QProgressDialog,
     QPushButton,
     QSplitter,
     QTableView,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -32,19 +48,30 @@ from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.ui.packet_model import PacketTableModel, make_record
 from argosnet.ui.widgets.hexview import HexView
 
+FILTERS_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "filters.json")
+BUILTIN_FILTERS = [
+    "dns", "arp", "icmp", "proto==tcp", "proto==udp",
+    "tcp.port==443", "tcp.port==80", "udp.port==53",
+    "ip.addr==", "ip.src==", "ip.dst==",
+]
+
 DRAIN_INTERVAL_MS = 250   # cadence de récupération des paquets depuis le sniffer
 FILTER_DEBOUNCE_MS = 200  # délai avant application du filtre d'affichage après frappe
 
 
 class PcapLoader(QThread):
-    """Lit un .pcap et construit les enregistrements hors du thread GUI.
+    """Lit un .pcap de façon incrémentale et construit les enregistrements hors GUI.
 
-    ``rdpcap`` et la dissection de chaque paquet (``make_record``) sont exécutés dans
-    ce thread pour ne pas geler l'interface sur les fichiers volumineux.
+    La lecture (``PcapReader``) et la dissection (``make_record``) se font dans ce thread ;
+    les enregistrements sont émis **par lots** pour peupler la liste progressivement et
+    afficher une progression, sans geler l'interface sur les fichiers volumineux.
     """
 
-    loaded = Signal(list)   # list[PacketRecord]
+    chunk = Signal(list)     # list[PacketRecord]
+    progress = Signal(int)   # nombre total de paquets lus
     failed = Signal(str)
+
+    CHUNK = 5000
 
     def __init__(self, path: str, base_number: int) -> None:
         super().__init__()
@@ -53,13 +80,22 @@ class PcapLoader(QThread):
 
     def run(self) -> None:
         try:
-            from scapy.utils import rdpcap
-            packets = list(rdpcap(self._path))
+            from scapy.utils import PcapReader
+            count = 0
+            batch: list = []
+            with PcapReader(self._path) as reader:
+                for pkt in reader:
+                    batch.append(make_record(self._base + count, pkt))
+                    count += 1
+                    if len(batch) >= self.CHUNK:
+                        self.chunk.emit(batch)
+                        self.progress.emit(count)
+                        batch = []
+            if batch:
+                self.chunk.emit(batch)
+                self.progress.emit(count)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
-            return
-        records = [make_record(self._base + i, pkt) for i, pkt in enumerate(packets)]
-        self.loaded.emit(records)
 
 
 class PacketFilterProxy(QSortFilterProxyModel):
@@ -111,8 +147,10 @@ class CaptureView(QWidget):
         self._filter_timer.setInterval(FILTER_DEBOUNCE_MS)
         self._filter_timer.timeout.connect(self._apply_filter)
 
+        self._favorites, self._history = self._load_filters()
         self._build_ui()
         self._reload_interfaces()
+        self._refresh_completer()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
@@ -143,7 +181,20 @@ class CaptureView(QWidget):
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText("ex. dns, ip.addr==192.168.1.1, tcp.port==443…")
         self._filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
+        self._filter_completer = QCompleter(self)
+        self._filter_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer_model = QStringListModel(self)
+        self._filter_completer.setModel(self._completer_model)
+        self._filter_edit.setCompleter(self._filter_completer)
         bar2.addWidget(self._filter_edit, 1)
+        self._fav_btn = QToolButton()
+        self._fav_btn.setText("★")
+        self._fav_btn.setToolTip("Filtres favoris et récents")
+        self._fav_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        fav_menu = QMenu(self._fav_btn)
+        fav_menu.aboutToShow.connect(self._build_favorites_menu)
+        self._fav_btn.setMenu(fav_menu)
+        bar2.addWidget(self._fav_btn)
         self._count_label = QLabel("0 paquet")
         bar2.addWidget(self._count_label)
         open_btn = QPushButton("Ouvrir .pcap…")
@@ -156,6 +207,11 @@ class CaptureView(QWidget):
         clear_btn.clicked.connect(self._clear)
         bar2.addWidget(clear_btn)
         root.addLayout(bar2)
+
+        # Barre de recherche (Ctrl+F), masquée par défaut.
+        root.addWidget(self._build_find_bar())
+        find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        find_shortcut.activated.connect(self._toggle_find)
 
         # Zone centrale : liste (haut) / détail + hexa (bas).
         vsplit = QSplitter(Qt.Orientation.Vertical)
@@ -170,6 +226,8 @@ class CaptureView(QWidget):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.selectionModel().currentRowChanged.connect(self._on_row_changed)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_context_menu)
         vsplit.addWidget(self._table)
 
         hsplit = QSplitter(Qt.Orientation.Horizontal)
@@ -259,26 +317,31 @@ class CaptureView(QWidget):
             self.load_pcap(path)
 
     def load_pcap(self, path: str) -> None:
-        """Charge un fichier .pcap en arrière-plan (ne gèle pas la GUI)."""
+        """Charge un fichier .pcap en arrière-plan, par lots (ne gèle pas la GUI)."""
         self._loader = PcapLoader(path, self._model.next_number())
         self._progress = QProgressDialog("Lecture de la capture…", None, 0, 0, self)
         self._progress.setWindowTitle("Chargement")
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress.setCancelButton(None)
         self._progress.setMinimumDuration(0)
-        self._loader.loaded.connect(self._on_pcap_loaded)
+        self._loader.chunk.connect(self._on_pcap_chunk)
+        self._loader.progress.connect(
+            lambda n: self._progress.setLabelText(f"Lecture de la capture…  {n} paquets")
+        )
         self._loader.failed.connect(self._on_pcap_failed)
         self._loader.finished.connect(self._progress.close)
         self._loader.start()
         self._progress.show()
 
-    def _on_pcap_loaded(self, records: list) -> None:
+    def _on_pcap_chunk(self, records: list) -> None:
         self._model.append_records(records)
         self._update_count()
         if records:
             self.packets_added.emit([r.packet for r in records])
 
     def _on_pcap_failed(self, message: str) -> None:
+        if hasattr(self, "_progress"):
+            self._progress.close()
         QMessageBox.critical(self, "Lecture impossible", f"Fichier illisible :\n{message}")
 
     def save_pcap_dialog(self) -> None:
@@ -298,7 +361,9 @@ class CaptureView(QWidget):
 
     # -------------------------------------------------------------- filtre
     def _apply_filter(self) -> None:
-        self._proxy.set_filter(self._filter_edit.text())
+        text = self._filter_edit.text().strip()
+        self._proxy.set_filter(text)
+        self._add_history(text)
         self._update_count()
 
     def _clear(self) -> None:
@@ -311,10 +376,11 @@ class CaptureView(QWidget):
     def _update_count(self) -> None:
         total = self._model.rowCount()
         shown = self._proxy.rowCount()
-        if shown == total:
-            self._count_label.setText(f"{total} paquet(s)")
-        else:
-            self._count_label.setText(f"{shown} / {total} paquet(s)")
+        text = f"{total} paquet(s)" if shown == total else f"{shown} / {total} paquet(s)"
+        dropped = self._controller.dropped_count()
+        if dropped:
+            text += f"   ⚠ {dropped} perdu(s)"
+        self._count_label.setText(text)
 
     # ------------------------------------------------------- sélection/détail
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
@@ -338,3 +404,189 @@ class CaptureView(QWidget):
                 top.addChild(QTreeWidgetItem([field_name, value]))
             self._detail.addTopLevelItem(top)
             top.setExpanded(True)
+
+    # ------------------------------------------------------- recherche (Ctrl+F)
+    def _build_find_bar(self) -> QWidget:
+        self._find_bar = QWidget()
+        layout = QHBoxLayout(self._find_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel("Rechercher :"))
+        self._find_edit = QLineEdit()
+        self._find_edit.setPlaceholderText("texte dans source, destination, protocole ou info…")
+        self._find_edit.returnPressed.connect(self._find_next)
+        layout.addWidget(self._find_edit, 1)
+        prev_btn = QPushButton("Précédent")
+        prev_btn.clicked.connect(self._find_prev)
+        next_btn = QPushButton("Suivant")
+        next_btn.clicked.connect(self._find_next)
+        close_btn = QPushButton("✕")
+        close_btn.setFixedWidth(30)
+        close_btn.clicked.connect(self._hide_find)
+        for btn in (prev_btn, next_btn, close_btn):
+            layout.addWidget(btn)
+        esc = QShortcut(QKeySequence("Escape"), self._find_edit)
+        esc.activated.connect(self._hide_find)
+        self._find_bar.setVisible(False)
+        return self._find_bar
+
+    def _toggle_find(self) -> None:
+        self._find_bar.setVisible(not self._find_bar.isVisible())
+        if self._find_bar.isVisible():
+            self._find_edit.setFocus()
+            self._find_edit.selectAll()
+
+    def _hide_find(self) -> None:
+        self._find_bar.setVisible(False)
+        self._table.setFocus()
+
+    def _find_next(self) -> None:
+        self._find(1)
+
+    def _find_prev(self) -> None:
+        self._find(-1)
+
+    def _find(self, direction: int) -> None:
+        text = self._find_edit.text().strip().lower()
+        rows = self._proxy.rowCount()
+        if not text or rows == 0:
+            return
+        cur = self._table.currentIndex().row()
+        i = (cur + direction) % rows if cur >= 0 else 0
+        for _ in range(rows):
+            source = self._proxy.mapToSource(self._proxy.index(i, 0))
+            record = self._model.record_at(source.row())
+            if record and self._row_matches(record, text):
+                idx = self._proxy.index(i, 0)
+                self._table.setCurrentIndex(idx)
+                self._table.scrollTo(idx)
+                return
+            i = (i + direction) % rows
+
+    @staticmethod
+    def _row_matches(record, text: str) -> bool:
+        s = record.summary
+        return (
+            text in str(record.number)
+            or text in s.src.lower()
+            or text in s.dst.lower()
+            or text in s.protocol.lower()
+            or text in s.info.lower()
+        )
+
+    # --------------------------------------------------- menu contextuel paquet
+    def _show_context_menu(self, pos) -> None:
+        index = self._table.indexAt(pos)
+        if not index.isValid():
+            return
+        record = self._model.record_at(self._proxy.mapToSource(index).row())
+        if record is None:
+            return
+        s = record.summary
+        menu = QMenu(self)
+        if s.src and s.src != "—":
+            menu.addAction(f"Filtrer la source  {s.src}", lambda: self._set_filter(f"ip.src=={s.src}"))
+            menu.addAction(f"Filtrer l'adresse  {s.src}", lambda: self._set_filter(f"ip.addr=={s.src}"))
+        if s.dst and s.dst != "—":
+            menu.addAction(f"Filtrer la destination  {s.dst}", lambda: self._set_filter(f"ip.dst=={s.dst}"))
+        menu.addAction(f"Filtrer le protocole  {s.protocol}",
+                       lambda: self._set_filter(f"proto=={s.protocol.lower()}"))
+        menu.addSeparator()
+        menu.addAction("Copier la ligne", lambda: self._copy_to_clipboard(self._row_text(record)))
+        menu.addAction("Copier l'info", lambda: self._copy_to_clipboard(s.info))
+        menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _set_filter(self, expr: str) -> None:
+        self._filter_edit.setText(expr)
+        self._filter_timer.stop()
+        self._apply_filter()
+
+    @staticmethod
+    def _row_text(record) -> str:
+        s = record.summary
+        return f"{record.number}\t{s.src}\t{s.dst}\t{s.protocol}\t{s.length}\t{s.info}"
+
+    @staticmethod
+    def _copy_to_clipboard(text: str) -> None:
+        QApplication.clipboard().setText(text)
+
+    # ------------------------------------------------ saut vers un paquet (alerte)
+    def select_packet_number(self, number: int) -> None:
+        """Sélectionne le paquet portant ce numéro (retire le filtre s'il le masque)."""
+        row = self._model.row_for_number(number)
+        if row is None:
+            return
+        source_index = self._model.index(row, 0)
+        proxy_index = self._proxy.mapFromSource(source_index)
+        if not proxy_index.isValid():  # masqué par le filtre → on l'enlève
+            self._filter_edit.clear()
+            self._filter_timer.stop()
+            self._apply_filter()
+            proxy_index = self._proxy.mapFromSource(source_index)
+        if proxy_index.isValid():
+            self._table.setCurrentIndex(proxy_index)
+            self._table.scrollTo(proxy_index)
+            self._table.setFocus()
+
+    # ---------------------------------------------------- filtres favoris/récents
+    def _load_filters(self) -> tuple[list, list]:
+        try:
+            with open(FILTERS_PATH, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            return list(data.get("favorites", [])), list(data.get("history", []))
+        except Exception:
+            return [], []
+
+    def _save_filters(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(FILTERS_PATH), exist_ok=True)
+            with open(FILTERS_PATH, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {"favorites": self._favorites, "history": self._history},
+                    handle, ensure_ascii=False, indent=2,
+                )
+        except Exception:
+            pass
+
+    def _add_history(self, expr: str) -> None:
+        if not expr:
+            return
+        if expr in self._history:
+            self._history.remove(expr)
+        self._history.insert(0, expr)
+        del self._history[20:]
+        self._save_filters()
+        self._refresh_completer()
+
+    def _refresh_completer(self) -> None:
+        suggestions: list[str] = []
+        for item in self._favorites + self._history + BUILTIN_FILTERS:
+            if item and item not in suggestions:
+                suggestions.append(item)
+        self._completer_model.setStringList(suggestions)
+
+    def _build_favorites_menu(self) -> None:
+        menu = self._fav_btn.menu()
+        menu.clear()
+        save = menu.addAction("★ Enregistrer le filtre actuel comme favori")
+        save.setEnabled(bool(self._filter_edit.text().strip()))
+        save.triggered.connect(self._save_current_favorite)
+        if self._favorites:
+            menu.addSeparator()
+            header = menu.addAction("Favoris")
+            header.setEnabled(False)
+            for expr in self._favorites:
+                menu.addAction("  " + expr, lambda checked=False, e=expr: self._set_filter(e))
+        if self._history:
+            menu.addSeparator()
+            header = menu.addAction("Récents")
+            header.setEnabled(False)
+            for expr in self._history[:10]:
+                menu.addAction("  " + expr, lambda checked=False, e=expr: self._set_filter(e))
+
+    def _save_current_favorite(self) -> None:
+        expr = self._filter_edit.text().strip()
+        if expr and expr not in self._favorites:
+            self._favorites.insert(0, expr)
+            del self._favorites[20:]
+            self._save_filters()
+            self._refresh_completer()

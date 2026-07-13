@@ -22,25 +22,23 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       restant en base SQLite. *(alerts_view.py)*
 - [x] Docstring obsolète + constante `HOSTSWEEP_WINDOW` dédiée.
 
-### Restant (mineur)
-- [ ] `list_interfaces()` appelé 3× au démarrage → mutualiser dans un service partagé.
-- [ ] Commits SQLite à chaque drain (250 ms) → regrouper les écritures.
-- [ ] Indicateur de **perte de paquets** quand le tampon de capture déborde
-      (`deque(maxlen=100000)` jette silencieusement les plus anciens).
-- [ ] Chargement `.pcap` : insérer par lots avec progression déterminée (%), pas seulement
-      une barre indéterminée.
+### Restant (mineur) — fait ✅
+- [x] `list_interfaces()` mis en cache (copie défensive par appel).
+- [x] Commits SQLite regroupés (insertion sans commit + `flush()` périodique 3 s + à la fermeture).
+- [x] Indicateur de **perte de paquets** (compteur de tampon plein affiché dans le compteur).
+- [x] Chargement `.pcap` **par lots** (lecture incrémentale `PcapReader` + progression + peuplement progressif).
 
 ---
 
 ## ✨ Backlog de fonctionnalités
 
-### ⚡ Quick wins
-- [ ] **Clic sur une alerte → saut au paquet** concerné (numéros déjà alignés).
-- [ ] **Recherche dans les paquets** (Ctrl+F).
-- [ ] **Menu clic droit** sur un paquet : « appliquer comme filtre », copier, suivre le flux.
-- [ ] **Notifications bureau + son** sur alerte critique.
-- [ ] **Filtres favoris + historique + autocomplétion**.
-- [ ] **Résumé de capture** (durée, pps moyen, hiérarchie des protocoles).
+### ⚡ Quick wins — fait ✅
+- [x] **Double-clic sur une alerte → saut au paquet** concerné (retire le filtre si besoin).
+- [x] **Recherche dans les paquets** (Ctrl+F, Suivant/Précédent, Échap).
+- [x] **Menu clic droit** sur un paquet : filtrer source/destination/adresse/protocole, copier.
+- [x] **Notifications bureau + son** sur alerte critique (basculable dans Affichage).
+- [x] **Filtres favoris + historique + autocomplétion** (persistés dans `~/.argosnet/filters.json`).
+- [x] **Résumé de capture** (menu Statistiques : durée, pps moyen, hiérarchie des protocoles).
 
 ### 🎯 Fortes valeurs
 - [ ] **Suivre le flux TCP/HTTP** (Follow Stream, réassemblage).

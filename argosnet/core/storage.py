@@ -52,6 +52,11 @@ class Database:
 
     # ------------------------------------------------------------- alertes
     def save_alerts(self, alerts: list[Alert]) -> None:
+        """Insère les alertes SANS commit (batching). Appeler :meth:`flush` pour valider.
+
+        Les lectures sur la même connexion voient déjà les insertions non validées ;
+        le commit ne sert qu'à la durabilité, on le regroupe donc via ``flush()``.
+        """
         if not alerts:
             return
         now = time.time()
@@ -63,7 +68,13 @@ class Database:
                 for a in alerts
             ],
         )
-        self._conn.commit()
+
+    def flush(self) -> None:
+        """Valide les écritures en attente (durabilité)."""
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
 
     def load_recent_alerts(self, limit: int = 200) -> list[Alert]:
         """Charge les dernières alertes, en ordre chronologique (plus ancienne d'abord)."""

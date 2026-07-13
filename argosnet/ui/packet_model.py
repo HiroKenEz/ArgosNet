@@ -73,6 +73,19 @@ class PacketTableModel(QAbstractTableModel):
         """Liste des paquets Scapy bruts (pour l'export .pcap)."""
         return [record.packet for record in self._records]
 
+    def row_for_number(self, number: int) -> int | None:
+        """Ligne (index source) correspondant au numéro de paquet donné."""
+        if not self._records:
+            return None
+        # Les numéros sont séquentiels : accès direct, avec repli linéaire.
+        idx = number - self._records[0].number
+        if 0 <= idx < len(self._records) and self._records[idx].number == number:
+            return idx
+        for i, record in enumerate(self._records):
+            if record.number == number:
+                return i
+        return None
+
     def next_number(self) -> int:
         return len(self._records) + 1
 

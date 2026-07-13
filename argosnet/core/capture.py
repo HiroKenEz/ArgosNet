@@ -20,6 +20,7 @@ class CaptureController:
         self._sniffer: Any = None
         self._buffer: deque = deque(maxlen=max_buffer)
         self._lock = threading.Lock()
+        self._dropped = 0  # paquets perdus (tampon plein, GUI trop lente à drainer)
 
     # ---------------------------------------------------------------- cycle
     def start(self, iface: Any = None, bpf_filter: Optional[str] = None) -> None:
@@ -58,7 +59,13 @@ class CaptureController:
     def _on_packet(self, packet: Any) -> None:
         # Appelé depuis le thread du sniffer : on empile simplement.
         with self._lock:
+            if self._buffer.maxlen is not None and len(self._buffer) >= self._buffer.maxlen:
+                # Le tampon est plein : append va évincer le plus ancien → paquet perdu.
+                self._dropped += 1
             self._buffer.append(packet)
+
+    def dropped_count(self) -> int:
+        return self._dropped
 
     def drain(self) -> list[Any]:
         """Récupère et vide les paquets accumulés depuis le dernier appel."""

@@ -96,6 +96,24 @@ class StatsEngine:
             for (a, b), byte_count in self.conv_bytes.most_common(limit)
         ]
 
+    def duration(self) -> int:
+        """Durée observée, en secondes (0 si aucune donnée)."""
+        return self._max_bucket + 1 if self._t0 is not None else 0
+
+    def summary(self) -> dict:
+        """Résumé synthétique de la capture (pour l'affichage « Résumé »)."""
+        dur = self.duration()
+        return {
+            "total_packets": self.total_packets,
+            "total_bytes": self.total_bytes,
+            "duration": dur,
+            "avg_pps": (self.total_packets / dur) if dur else 0.0,
+            "avg_bps": (self.total_bytes / dur) if dur else 0.0,
+            "protocols": self.protocol_breakdown(),
+            "distinct_talkers": len(self.talker_bytes),
+            "distinct_conversations": len(self.conv_bytes),
+        }
+
     def throughput_series(self) -> tuple[list[int], list[int], list[float]]:
         """Retourne (secondes, paquets/s, Ko/s) sur la fenêtre glissante conservée."""
         if not self.per_second_packets:

@@ -40,6 +40,14 @@ def test_reset():
     assert engine.proto_counts == {}
 
 
+def test_summary():
+    s = _engine().summary()
+    assert s["total_packets"] == 9
+    assert dict(s["protocols"]).get("TCP") == 3
+    assert s["duration"] >= 1
+    assert s["distinct_talkers"] > 0
+
+
 def test_throughput_window_bounds_series():
     # Deux paquets très éloignés dans le temps : la fenêtre glissante purge le premier,
     # mais le total cumulé n'est pas affecté.

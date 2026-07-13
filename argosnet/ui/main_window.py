@@ -7,11 +7,15 @@ et persistées en base SQLite.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMessageBox,
+    QStyle,
+    QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -66,6 +70,7 @@ class MainWindow(QMainWindow):
         self.capture_view.cleared.connect(self._reset_detection)
         self.scan_view.device_found.connect(self._db.record_device)
         self.alerts_view.counts_changed.connect(self._update_alert_tab)
+        self.alerts_view.jump_to_packet.connect(self._jump_to_packet)
 
         self.tabs.addTab(self._build_interfaces_tab(), "Interfaces")
         self.tabs.addTab(self.capture_view, "Capture")
@@ -74,7 +79,14 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.network_map_view, "Carte")
         self._alerts_tab_index = self.tabs.addTab(self.alerts_view, "Alertes")
 
+        self._setup_notifications()
         self._build_menu()
+
+        # Validation périodique des écritures SQLite (batching, cf. audit R2).
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(3000)
+        self._flush_timer.timeout.connect(self._db.flush)
+        self._flush_timer.start()
 
         # Rejoue l'historique des alertes persistées.
         self.alerts_view.add_alerts(self._db.load_recent_alerts())
@@ -82,6 +94,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"{len(self._interfaces)} interface(s) réseau détectée(s)"
         )
+
+    def _setup_notifications(self) -> None:
+        self._tray = None
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+            self._tray = QSystemTrayIcon(icon, self)
+            self._tray.setToolTip("ArgosNet")
+            self._tray.show()
 
     def _seed_known_devices(self) -> None:
         known = self._db.known_macs()
@@ -108,6 +128,13 @@ class MainWindow(QMainWindow):
         self._dark_action.setCheckable(True)
         self._dark_action.setChecked(True)
         self._dark_action.toggled.connect(self._toggle_theme)
+        self._notify_action = view_menu.addAction("Notifications d'alerte critique")
+        self._notify_action.setCheckable(True)
+        self._notify_action.setChecked(True)
+
+        stats_menu = self.menuBar().addMenu("&Statistiques")
+        summary_action = stats_menu.addAction("Résumé de la capture…")
+        summary_action.triggered.connect(self._show_summary)
 
         history_menu = self.menuBar().addMenu("&Historique")
         clear_alerts = history_menu.addAction("Effacer l'historique des alertes")
@@ -127,8 +154,39 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.capture_view.stop_capture_if_running()
+        self._db.flush()
         self._db.close()
+        if self._tray is not None:
+            self._tray.hide()
         super().closeEvent(event)
+
+    def _jump_to_packet(self, number: int) -> None:
+        """Depuis une alerte : bascule sur la capture et sélectionne le paquet."""
+        self.tabs.setCurrentWidget(self.capture_view)
+        self.capture_view.select_packet_number(number)
+
+    def _show_summary(self) -> None:
+        from argosnet.ui.dashboard_view import format_bytes
+
+        s = self.dashboard_view._stats.summary()
+        if s["total_packets"] == 0:
+            QMessageBox.information(self, "Résumé de la capture", "Aucun paquet capturé.")
+            return
+        total = s["total_packets"]
+        lines = [
+            f"Paquets           : {total:,}".replace(",", " "),
+            f"Volume            : {format_bytes(s['total_bytes'])}",
+            f"Durée             : {s['duration']} s",
+            f"Débit moyen       : {s['avg_pps']:.1f} paquets/s  ({format_bytes(s['avg_bps'])}/s)",
+            f"Hôtes distincts   : {s['distinct_talkers']}",
+            f"Conversations     : {s['distinct_conversations']}",
+            "",
+            "Répartition par protocole :",
+        ]
+        for name, count in s["protocols"]:
+            pct = 100 * count / total if total else 0
+            lines.append(f"    {name:<10} {count:>8}   ({pct:.1f} %)")
+        QMessageBox.information(self, "Résumé de la capture", "\n".join(lines))
 
     def _toggle_theme(self, dark: bool) -> None:
         from PySide6.QtWidgets import QApplication
@@ -151,10 +209,27 @@ class MainWindow(QMainWindow):
         for alert in alerts:
             if alert.category == "Nouvel appareil":
                 self._db.record_device(alert.source)
-        critical = sum(1 for a in alerts if a.severity.name == "CRITICAL")
-        if critical:
+        criticals = [a for a in alerts if a.severity.name == "CRITICAL"]
+        if criticals:
             self.statusBar().showMessage(
-                f"⚠️ {critical} alerte(s) critique(s) détectée(s)", 5000
+                f"⚠️ {len(criticals)} alerte(s) critique(s) détectée(s)", 5000
+            )
+            self._notify_critical(criticals)
+
+    def _notify_critical(self, criticals: list) -> None:
+        if not self._notify_action.isChecked():
+            return
+        QApplication.beep()
+        if self._tray is not None:
+            first = criticals[0]
+            body = f"{first.category} — {first.source}"
+            if len(criticals) > 1:
+                body += f"  (+{len(criticals) - 1} autre(s))"
+            self._tray.showMessage(
+                "ArgosNet — alerte critique",
+                body,
+                QSystemTrayIcon.MessageIcon.Critical,
+                6000,
             )
 
     def _reset_detection(self) -> None:

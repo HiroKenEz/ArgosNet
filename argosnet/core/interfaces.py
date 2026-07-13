@@ -42,15 +42,29 @@ def _first_ipv4(ips: list[str] | None) -> str | None:
     return None
 
 
-def list_interfaces() -> list[NetIface]:
-    """Retourne la liste des interfaces réseau.
+_cache: list[NetIface] | None = None
+
+
+def list_interfaces(refresh: bool = False) -> list[NetIface]:
+    """Retourne la liste des interfaces réseau (mise en cache pour la session).
 
     - Si Npcap est présent, renvoie les interfaces réellement capturables
       (``get_working_ifaces``), avec l'objet Scapy prêt pour la capture.
     - Sinon, se replie sur l'énumération Windows (``get_windows_if_list``) pour
       rester informatif : ces entrées sont marquées ``capturable=False``.
     - Renvoie une liste vide si Scapy n'est pas disponible du tout.
+
+    L'énumération Scapy est coûteuse : le résultat est mémorisé et une **copie** est
+    renvoyée à chaque appel (les appelants peuvent trier sans effet de bord).
+    Passer ``refresh=True`` pour forcer une nouvelle énumération.
     """
+    global _cache
+    if _cache is None or refresh:
+        _cache = _compute_interfaces()
+    return list(_cache)
+
+
+def _compute_interfaces() -> list[NetIface]:
     capturable = _list_capturable_interfaces()
     if capturable:
         return capturable
