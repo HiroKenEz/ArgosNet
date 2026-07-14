@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         save_action = file_menu.addAction("Enregistrer la capture…")
         save_action.triggered.connect(self.capture_view.save_pcap_dialog)
 
-        report_action = file_menu.addAction("Exporter un rapport HTML…")
+        report_action = file_menu.addAction("Exporter un rapport (HTML/PDF)…")
         report_action.triggered.connect(self._export_report)
 
         file_menu.addSeparator()
@@ -210,8 +210,9 @@ class MainWindow(QMainWindow):
 
         from argosnet.core.report import build_html_report
 
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter un rapport", "rapport_argosnet.html", "HTML (*.html)"
+        path, selected = QFileDialog.getSaveFileName(
+            self, "Exporter un rapport", "rapport_argosnet.html",
+            "HTML (*.html);;PDF (*.pdf)",
         )
         if not path:
             return
@@ -223,14 +224,33 @@ class MainWindow(QMainWindow):
             alerts=self.alerts_view._alerts,
             devices=self._db.list_devices(),
         )
+        as_pdf = path.lower().endswith(".pdf") or "pdf" in selected.lower()
         try:
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(report)
+            if as_pdf:
+                if not path.lower().endswith(".pdf"):
+                    path += ".pdf"
+                self._write_pdf(report, path)
+            else:
+                if not path.lower().endswith((".html", ".htm")):
+                    path += ".html"
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(report)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Export impossible", str(exc))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
         self.statusBar().showMessage(f"Rapport exporté : {path}", 5000)
+
+    @staticmethod
+    def _write_pdf(html: str, path: str) -> None:
+        """Rend le rapport HTML en PDF via Qt (aucune dépendance externe)."""
+        from PySide6.QtGui import QPageSize, QPdfWriter, QTextDocument
+
+        writer = QPdfWriter(path)
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        doc = QTextDocument()
+        doc.setHtml(html)
+        doc.print_(writer)
 
     def _on_tab_changed(self, _index: int) -> None:
         # Rafraîchit l'inventaire quand on ouvre son onglet (données en base).

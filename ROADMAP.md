@@ -53,7 +53,8 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] **Couleurs de protocole personnalisables** (menu Affichage, persistées).
 - [x] **IO Graph** (débit par protocole dans le temps, à la Wireshark) —
       courbe empilée par protocole (top N) dans le Dashboard.
-- [ ] **Export PDF** (en plus du HTML).
+- [x] **Export PDF** (en plus du HTML) — rendu du rapport via Qt (`QPdfWriter`),
+      sans dépendance externe. *(main_window.py)*
 - [x] **Empreinte TLS JA3** : calculée depuis le ClientHello (affichée dans l'info TLS)
       et comparée à une liste noire JA3 (threat intel indépendante de l'IP).
 - [ ] **GeoIP / ASN** pour les IP externes (carte + liste).

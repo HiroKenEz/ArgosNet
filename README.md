@@ -92,6 +92,7 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 | **Conversations** | Paires d'hôtes triées par volume |
 | **Inventaire** | Appareils connus (MAC / IP / constructeur / vu le), **libellés personnalisés** |
 | **Follow Stream** | Réassemblage d'un flux TCP (clic droit sur un paquet) |
+| **Rapports** | Export d'une session en **HTML ou PDF** (résumé, protocoles, top talkers, conversations, alertes, appareils) |
 | **Historique** | Persistance SQLite des alertes et des appareils connus, export CSV |
 | **Thème** | Interface claire ou sombre (menu **Affichage**), sombre par défaut |
 
