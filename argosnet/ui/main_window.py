@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from argosnet import __app_name__, __version__
+from argosnet.core.i18n import tr
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.core.detection.detectors import NewDeviceDetector
 from argosnet.core.detection.engine import DetectionEngine
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, db_path: str | None = None) -> None:
         super().__init__()
-        self.setWindowTitle(f"{__app_name__} {__version__} — Analyseur réseau local")
+        self.setWindowTitle(f"{__app_name__} {__version__} — {tr('Analyseur réseau local')}")
         self.resize(1200, 750)
 
         from argosnet.ui.packet_model import load_proto_colors
@@ -82,14 +83,14 @@ class MainWindow(QMainWindow):
         self.alerts_view.counts_changed.connect(self._update_alert_tab)
         self.alerts_view.jump_to_packet.connect(self._jump_to_packet)
 
-        self.tabs.addTab(self._build_interfaces_tab(), "Interfaces")
-        self.tabs.addTab(self.capture_view, "Capture")
-        self.tabs.addTab(self.scan_view, "Scan")
-        self.tabs.addTab(self.devices_view, "Appareils")
-        self.tabs.addTab(self.dashboard_view, "Dashboard")
-        self.tabs.addTab(self.conversations_view, "Conversations")
-        self.tabs.addTab(self.network_map_view, "Carte")
-        self._alerts_tab_index = self.tabs.addTab(self.alerts_view, "Alertes")
+        self.tabs.addTab(self._build_interfaces_tab(), tr("Interfaces"))
+        self.tabs.addTab(self.capture_view, tr("Capture"))
+        self.tabs.addTab(self.scan_view, tr("Scan"))
+        self.tabs.addTab(self.devices_view, tr("Appareils"))
+        self.tabs.addTab(self.dashboard_view, tr("Dashboard"))
+        self.tabs.addTab(self.conversations_view, tr("Conversations"))
+        self.tabs.addTab(self.network_map_view, tr("Carte"))
+        self._alerts_tab_index = self.tabs.addTab(self.alerts_view, tr("Alertes"))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self._setup_notifications()
@@ -105,7 +106,7 @@ class MainWindow(QMainWindow):
         self.alerts_view.add_alerts(self._db.load_recent_alerts())
 
         self.statusBar().showMessage(
-            f"{len(self._interfaces)} interface(s) réseau détectée(s)"
+            tr("{count} interface(s) réseau détectée(s)").format(count=len(self._interfaces))
         )
 
     def _setup_notifications(self) -> None:
@@ -124,55 +125,83 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ helpers
     def _build_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("&Fichier")
+        file_menu = self.menuBar().addMenu(tr("&Fichier"))
 
-        open_action = file_menu.addAction("Ouvrir une capture .pcap…")
+        open_action = file_menu.addAction(tr("Ouvrir une capture .pcap…"))
         open_action.triggered.connect(self._open_capture)
 
-        save_action = file_menu.addAction("Enregistrer la capture…")
+        save_action = file_menu.addAction(tr("Enregistrer la capture…"))
         save_action.triggered.connect(self.capture_view.save_pcap_dialog)
 
-        report_action = file_menu.addAction("Exporter un rapport (HTML/PDF)…")
+        report_action = file_menu.addAction(tr("Exporter un rapport (HTML/PDF)…"))
         report_action.triggered.connect(self._export_report)
 
         file_menu.addSeparator()
-        quit_action = file_menu.addAction("Quitter")
+        quit_action = file_menu.addAction(tr("Quitter"))
         quit_action.triggered.connect(self.close)
 
-        view_menu = self.menuBar().addMenu("&Affichage")
-        self._dark_action = view_menu.addAction("Thème sombre")
+        view_menu = self.menuBar().addMenu(tr("&Affichage"))
+        self._dark_action = view_menu.addAction(tr("Thème sombre"))
         self._dark_action.setCheckable(True)
         self._dark_action.setChecked(True)
         self._dark_action.toggled.connect(self._toggle_theme)
-        self._notify_action = view_menu.addAction("Notifications d'alerte critique")
+        self._notify_action = view_menu.addAction(tr("Notifications d'alerte critique"))
         self._notify_action.setCheckable(True)
         self._notify_action.setChecked(True)
-        colors_action = view_menu.addAction("Couleurs des protocoles…")
+        colors_action = view_menu.addAction(tr("Couleurs des protocoles…"))
         colors_action.triggered.connect(self._edit_colors)
+        self._build_language_menu(view_menu)
 
-        detect_menu = self.menuBar().addMenu("&Détection")
-        rules_action = detect_menu.addAction("Éditer les règles IDS…")
+        detect_menu = self.menuBar().addMenu(tr("&Détection"))
+        rules_action = detect_menu.addAction(tr("Éditer les règles IDS…"))
         rules_action.triggered.connect(self._edit_rules)
 
-        stats_menu = self.menuBar().addMenu("&Statistiques")
-        summary_action = stats_menu.addAction("Résumé de la capture…")
+        stats_menu = self.menuBar().addMenu(tr("&Statistiques"))
+        summary_action = stats_menu.addAction(tr("Résumé de la capture…"))
         summary_action.triggered.connect(self._show_summary)
 
-        history_menu = self.menuBar().addMenu("&Historique")
-        clear_alerts = history_menu.addAction("Effacer l'historique des alertes")
+        history_menu = self.menuBar().addMenu(tr("&Historique"))
+        clear_alerts = history_menu.addAction(tr("Effacer l'historique des alertes"))
         clear_alerts.triggered.connect(self._clear_alert_history)
-        forget_devices = history_menu.addAction("Oublier les appareils connus")
+        forget_devices = history_menu.addAction(tr("Oublier les appareils connus"))
         forget_devices.triggered.connect(self._forget_devices)
+
+    def _build_language_menu(self, view_menu) -> None:
+        from PySide6.QtGui import QActionGroup
+
+        from argosnet.core.i18n import get_language
+
+        view_menu.addSeparator()
+        lang_menu = view_menu.addMenu(tr("Langue"))
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for code, label in (("fr", tr("Français")), ("en", tr("English"))):
+            action = lang_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(get_language() == code)
+            action.triggered.connect(lambda _checked=False, c=code: self._set_language(c))
+            group.addAction(action)
+
+    def _set_language(self, code: str) -> None:
+        from argosnet.core.i18n import get_language, save_language
+
+        if code == get_language():
+            return
+        save_language(code)
+        QMessageBox.information(
+            self, tr("Langue"),
+            tr("Redémarrez ArgosNet pour appliquer la nouvelle langue."),
+        )
 
     def _clear_alert_history(self) -> None:
         self._db.clear_alerts()
         self.alerts_view.reset()
-        self.statusBar().showMessage("Historique des alertes effacé.", 4000)
+        self.statusBar().showMessage(tr("Historique des alertes effacé."), 4000)
 
     def _forget_devices(self) -> None:
         self._db.clear_devices()
         self._seed_known_devices()
-        self.statusBar().showMessage("Appareils connus oubliés.", 4000)
+        self.statusBar().showMessage(tr("Appareils connus oubliés."), 4000)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.capture_view.stop_capture_if_running()
@@ -187,7 +216,7 @@ class MainWindow(QMainWindow):
 
         if RulesEditorDialog(self).exec():
             self._reload_rules()
-            self.statusBar().showMessage("Règles de détection rechargées.", 4000)
+            self.statusBar().showMessage(tr("Règles de détection rechargées."), 4000)
 
     def _reload_rules(self) -> None:
         from argosnet.core.detection.detectors import SignatureDetector, load_rules
@@ -211,7 +240,7 @@ class MainWindow(QMainWindow):
         from argosnet.core.report import build_html_report
 
         path, selected = QFileDialog.getSaveFileName(
-            self, "Exporter un rapport", "rapport_argosnet.html",
+            self, tr("Exporter un rapport"), "rapport_argosnet.html",
             "HTML (*.html);;PDF (*.pdf)",
         )
         if not path:
@@ -236,10 +265,10 @@ class MainWindow(QMainWindow):
                 with open(path, "w", encoding="utf-8") as handle:
                     handle.write(report)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Export impossible", str(exc))
+            QMessageBox.critical(self, tr("Export impossible"), str(exc))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
-        self.statusBar().showMessage(f"Rapport exporté : {path}", 5000)
+        self.statusBar().showMessage(tr("Rapport exporté : {path}").format(path=path), 5000)
 
     @staticmethod
     def _write_pdf(html: str, path: str) -> None:

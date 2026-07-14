@@ -71,7 +71,9 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       « Anneau » dans la barre de capture ; `RingWriter` borne l'espace disque
       (fichiers rotatifs, quota configurable). *(capture.py)*
 - [ ] **Rejeu / injection de paquets** (Scapy send).
-- [ ] **Multi-langue** (EN/FR).
+- [x] **Multi-langue** (EN/FR) — infra i18n légère (`core/i18n.py`), langue
+      persistée dans `~/.argosnet/config.json`, bascule dans **Affichage → Langue**
+      (chrome principale traduite ; appliquée au redémarrage).
 - [ ] **Planification de scans réseau**.
 
 ---

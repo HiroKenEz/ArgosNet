@@ -95,6 +95,7 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 | **Rapports** | Export d'une session en **HTML ou PDF** (résumé, protocoles, top talkers, conversations, alertes, appareils) |
 | **Historique** | Persistance SQLite des alertes et des appareils connus, export CSV |
 | **Thème** | Interface claire ou sombre (menu **Affichage**), sombre par défaut |
+| **Langue** | Interface en **français ou anglais** (menu **Affichage → Langue**), appliquée au redémarrage |
 
 Décodeurs : Ethernet/ARP, IPv4/IPv6, TCP/UDP/ICMP, **DNS/mDNS**, **DHCP**, **HTTP**
 (méthode/URL/host) et **TLS** (extraction du SNI et **empreinte JA3**).

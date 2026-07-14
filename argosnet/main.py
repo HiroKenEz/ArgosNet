@@ -39,8 +39,11 @@ def main() -> int:
 
     from argosnet import __app_name__
     from argosnet.core.environment import environment_warnings
+    from argosnet.core.i18n import load_language
     from argosnet.ui.main_window import MainWindow
     from argosnet.ui.theme import apply_theme
+
+    load_language()  # applique la langue persistée avant de construire l'interface
 
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)

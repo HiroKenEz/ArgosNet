@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 
 from argosnet.core.capture import CaptureController, RingWriter
 from argosnet.core.display_filter import compile_filter
+from argosnet.core.i18n import tr
 from argosnet.core.dissect import hexdump, layer_tree
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.ui.packet_model import PacketTableModel, make_record
@@ -170,23 +171,23 @@ class CaptureView(QWidget):
 
         # Barre 1 : interface + filtre de capture + start/stop.
         bar1 = QHBoxLayout()
-        bar1.addWidget(QLabel("Interface :"))
+        bar1.addWidget(QLabel(tr("Interface :")))
         self._iface_combo = QComboBox()
         self._iface_combo.setMinimumWidth(320)
         bar1.addWidget(self._iface_combo)
-        bar1.addWidget(QLabel("Filtre capture (BPF) :"))
+        bar1.addWidget(QLabel(tr("Filtre capture (BPF) :")))
         self._bpf_edit = QLineEdit()
         self._bpf_edit.setPlaceholderText("ex. tcp port 443, host 192.168.1.1…")
         bar1.addWidget(self._bpf_edit, 1)
-        self._ring_check = QCheckBox("Anneau")
+        self._ring_check = QCheckBox(tr("Anneau"))
         self._ring_check.setToolTip(
             "Capture en anneau : écrit le trafic dans des fichiers .pcap rotatifs\n"
             f"({RING_MAX_FILES} fichiers × {RING_MAX_PACKETS:,} paquets max) sous\n"
             f"{RING_DIR}\nIdéal pour une surveillance continue sans saturer le disque."
         )
         bar1.addWidget(self._ring_check)
-        self._start_btn = QPushButton("▶ Démarrer")
-        self._stop_btn = QPushButton("■ Arrêter")
+        self._start_btn = QPushButton(tr("▶ Démarrer"))
+        self._stop_btn = QPushButton(tr("■ Arrêter"))
         self._stop_btn.setEnabled(False)
         self._start_btn.clicked.connect(self._start_capture)
         self._stop_btn.clicked.connect(self._stop_capture)
@@ -196,7 +197,7 @@ class CaptureView(QWidget):
 
         # Barre 2 : filtre d'affichage + compteur + effacer.
         bar2 = QHBoxLayout()
-        bar2.addWidget(QLabel("Filtre d'affichage :"))
+        bar2.addWidget(QLabel(tr("Filtre d'affichage :")))
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText("ex. dns, ip.addr==192.168.1.1, tcp.port==443…")
         self._filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
@@ -216,13 +217,13 @@ class CaptureView(QWidget):
         bar2.addWidget(self._fav_btn)
         self._count_label = QLabel("0 paquet")
         bar2.addWidget(self._count_label)
-        open_btn = QPushButton("Ouvrir .pcap…")
+        open_btn = QPushButton(tr("Ouvrir .pcap…"))
         open_btn.clicked.connect(self.open_pcap_dialog)
         bar2.addWidget(open_btn)
-        save_btn = QPushButton("Enregistrer .pcap…")
+        save_btn = QPushButton(tr("Enregistrer .pcap…"))
         save_btn.clicked.connect(self.save_pcap_dialog)
         bar2.addWidget(save_btn)
-        clear_btn = QPushButton("Effacer")
+        clear_btn = QPushButton(tr("Effacer"))
         clear_btn.clicked.connect(self._clear)
         bar2.addWidget(clear_btn)
         root.addLayout(bar2)
@@ -441,14 +442,14 @@ class CaptureView(QWidget):
         self._find_bar = QWidget()
         layout = QHBoxLayout(self._find_bar)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Rechercher :"))
+        layout.addWidget(QLabel(tr("Rechercher :")))
         self._find_edit = QLineEdit()
         self._find_edit.setPlaceholderText("texte dans source, destination, protocole ou info…")
         self._find_edit.returnPressed.connect(self._find_next)
         layout.addWidget(self._find_edit, 1)
-        prev_btn = QPushButton("Précédent")
+        prev_btn = QPushButton(tr("Précédent"))
         prev_btn.clicked.connect(self._find_prev)
-        next_btn = QPushButton("Suivant")
+        next_btn = QPushButton(tr("Suivant"))
         next_btn.clicked.connect(self._find_next)
         close_btn = QPushButton("✕")
         close_btn.setFixedWidth(30)
