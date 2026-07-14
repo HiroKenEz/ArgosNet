@@ -54,13 +54,16 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] **IO Graph** (débit par protocole dans le temps, à la Wireshark) —
       courbe empilée par protocole (top N) dans le Dashboard.
 - [ ] **Export PDF** (en plus du HTML).
-- [ ] **TLS JA3** et **GeoIP / ASN** pour les IP externes (carte + liste).
+- [x] **Empreinte TLS JA3** : calculée depuis le ClientHello (affichée dans l'info TLS)
+      et comparée à une liste noire JA3 (threat intel indépendante de l'IP).
+- [ ] **GeoIP / ASN** pour les IP externes (carte + liste).
 
 ### 🚀 Ambitieux
 - [x] **Détection étendue** : DNS tunneling, *beaconing* C2 (périodicité), serveur DHCP rogue.
 - [x] **Threat intel** : comparaison des IP à une liste noire (fichier livré +
       `~/.argosnet/blocklist.txt` utilisateur).
-- [ ] Détections restantes : port knocking, empreinte TLS JA3.
+- [x] Détections restantes : **port knocking** (séquence de ports hauts distincts) et
+      **empreinte TLS JA3** (liste noire de clients TLS malveillants).
 - [ ] **Baseline / détection d'anomalies** (apprentissage du trafic normal).
 - [x] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7) — case
       « Anneau » dans la barre de capture ; `RingWriter` borne l'espace disque

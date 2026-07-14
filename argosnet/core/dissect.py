@@ -227,6 +227,16 @@ def _tls_sni(data: bytes) -> str | None:
     return None
 
 
+def _tls_ja3(payload: bytes) -> str | None:
+    """Empreinte JA3 (md5) d'un ClientHello, ou None si non calculable."""
+    try:
+        from argosnet.core.ja3 import ja3_from_client_hello
+        result = ja3_from_client_hello(payload)
+        return result[1] if result else None
+    except Exception:
+        return None
+
+
 def _tls_info(payload: bytes) -> str:
     if not payload:
         return "TLS"
@@ -234,7 +244,11 @@ def _tls_info(payload: bytes) -> str:
     if content_type == 0x16 and len(payload) > 5:  # handshake
         if payload[5] == 0x01:
             sni = _tls_sni(payload)
-            return "TLS  Client Hello" + (f"   (SNI: {sni})" if sni else "")
+            extra = f"   (SNI: {sni})" if sni else ""
+            ja3 = _tls_ja3(payload)
+            if ja3:
+                extra += f"   (JA3: {ja3})"
+            return "TLS  Client Hello" + extra
         if payload[5] == 0x02:
             return "TLS  Server Hello"
         return "TLS  Handshake"

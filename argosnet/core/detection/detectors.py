@@ -38,6 +38,14 @@ BEACON_MAX_JITTER = 0.15   # coefficient de variation maxi des intervalles (rég
 BEACON_MIN_INTERVAL = 1.0
 BEACON_MAX_INTERVAL = 3600.0
 
+# Port knocking : courte séquence de SYN vers des ports hauts distincts d'une même
+# cible, depuis une même source, dans une fenêtre brève. Volontairement borné en
+# nombre de ports pour rester distinct d'un scan (voir PORTSCAN_PORTS).
+PORTKNOCK_WINDOW = 10.0
+PORTKNOCK_MIN_PORTS = 3
+PORTKNOCK_MAX_PORTS = 7
+PORTKNOCK_MIN_PORT = 1024   # les « coups » visent des ports hauts/inhabituels
+
 SYN = 0x02
 ACK = 0x10
 
@@ -620,6 +628,146 @@ class BlocklistDetector(Detector):
         self._alerted = set()
 
 
+class PortKnockDetector(Detector):
+    """Repère une séquence de *port knocking* (ouverture furtive d'un service).
+
+    Le port knocking consiste à frapper, dans un ordre précis, une courte suite de
+    ports fermés pour déclencher l'ouverture d'un accès (souvent une backdoor). On
+    signale une source qui envoie, vers une même cible et en peu de temps, des SYN
+    sur ``PORTKNOCK_MIN_PORTS``..``PORTKNOCK_MAX_PORTS`` ports hauts **distincts**
+    (chacun frappé une seule fois). La borne haute la distingue d'un scan de ports.
+    """
+
+    def __init__(self) -> None:
+        # (src, dst) -> deque[(time, dport)]
+        self.events: dict[tuple[str, str], deque] = defaultdict(deque)
+        self._alerted: set[tuple[str, str]] = set()
+        self._n = 0
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+            return []
+        tcp = pkt.getlayer(TCP)
+        if not (int(tcp.flags) & SYN) or (int(tcp.flags) & ACK):  # SYN pur
+            return []
+        dport = int(tcp.dport)
+        if dport < PORTKNOCK_MIN_PORT:
+            return []
+        ip = pkt.getlayer(IP)
+        src, dst = ip.src, ip.dst
+        now = _pkt_time(pkt)
+
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            _prune_events(self.events, now, PORTKNOCK_WINDOW, lambda e: e[0])
+
+        window = self.events[(src, dst)]
+        window.append((now, dport))
+        while window and now - window[0][0] > PORTKNOCK_WINDOW:
+            window.popleft()
+
+        ports = [p for _, p in window]
+        distinct = set(ports)
+        # Séquence courte de ports distincts, chacun frappé une seule fois.
+        if (
+            (src, dst) not in self._alerted
+            and PORTKNOCK_MIN_PORTS <= len(distinct) <= PORTKNOCK_MAX_PORTS
+            and len(ports) == len(distinct)
+        ):
+            self._alerted.add((src, dst))
+            sequence = " → ".join(str(p) for _, p in window)
+            return [
+                Alert(
+                    severity=Severity.WARNING,
+                    category="Port knocking",
+                    source=src,
+                    detail=(
+                        f"{src} a frappé une séquence de {len(distinct)} ports hauts sur {dst} "
+                        f"({sequence}) en moins de {PORTKNOCK_WINDOW:.0f}s — possible port knocking "
+                        "(ouverture furtive d'un accès)."
+                    ),
+                    timestamp=now,
+                    packet_number=number,
+                )
+            ]
+        return []
+
+    def reset(self) -> None:
+        self.__init__()
+
+
+BUNDLED_JA3_BLOCKLIST = os.path.join(os.path.dirname(__file__), "ja3_blocklist.txt")
+USER_JA3_BLOCKLIST = os.path.join(os.path.expanduser("~"), ".argosnet", "ja3_blocklist.txt")
+
+
+def load_ja3_blocklist(paths: list[str] | None = None) -> set[str]:
+    """Charge une liste noire d'empreintes JA3 (fichier livré + fichier utilisateur)."""
+    if paths is None:
+        paths = [BUNDLED_JA3_BLOCKLIST, USER_JA3_BLOCKLIST]
+    hashes: set[str] = set()
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    entry = line.split("#", 1)[0].strip().lower()
+                    if entry:
+                        hashes.add(entry)
+        except Exception:
+            continue
+    return hashes
+
+
+class Ja3BlocklistDetector(Detector):
+    """Alerte quand un ClientHello TLS présente une empreinte JA3 sur liste noire.
+
+    JA3 identifie le client TLS indépendamment de l'IP : on repère ainsi un outil ou
+    un malware connu même s'il change d'adresse ou de domaine (threat intel).
+    """
+
+    def __init__(self, blocklist: set[str] | None = None) -> None:
+        self.blocklist = blocklist if blocklist is not None else load_ja3_blocklist()
+        self._alerted: set[tuple[str, str]] = set()
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        if not self.blocklist or not pkt.haslayer(Raw):
+            return []
+        try:
+            payload = bytes(pkt.getlayer(Raw).load)
+        except Exception:
+            return []
+        if len(payload) < 6 or payload[0] != 0x16:  # enregistrement TLS handshake
+            return []
+        from argosnet.core.ja3 import ja3_from_client_hello
+
+        result = ja3_from_client_hello(payload)
+        if not result:
+            return []
+        digest = result[1].lower()
+        if digest not in self.blocklist:
+            return []
+        src = pkt.getlayer(IP).src if pkt.haslayer(IP) else "?"
+        key = (src, digest)
+        if key in self._alerted:
+            return []
+        self._alerted.add(key)
+        return [
+            Alert(
+                severity=Severity.CRITICAL,
+                category="Empreinte JA3 malveillante",
+                source=src,
+                detail=(
+                    f"Client TLS de {src} avec l'empreinte JA3 {digest}, connue comme "
+                    "malveillante (liste noire JA3)."
+                ),
+                timestamp=_pkt_time(pkt),
+                packet_number=number,
+            )
+        ]
+
+    def reset(self) -> None:
+        self._alerted = set()
+
+
 def _severity_from_str(value: str) -> Severity:
     return {
         "info": Severity.INFO,
@@ -673,6 +821,8 @@ def default_detectors() -> list[Detector]:
         DnsTunnelDetector(),
         BeaconDetector(),
         RogueDhcpDetector(),
+        PortKnockDetector(),
         BlocklistDetector(),
+        Ja3BlocklistDetector(),
         SignatureDetector(),
     ]

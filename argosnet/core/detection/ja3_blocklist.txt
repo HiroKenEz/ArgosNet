@@ -1,0 +1,11 @@
+# Liste noire d'empreintes JA3 (une par ligne, MD5 en minuscules).
+#
+# JA3 identifie un client TLS (navigateur, outil, malware) indépendamment de son IP
+# ou de son domaine. Ajoutez ici les empreintes de clients connus comme malveillants
+# (issues de flux de threat intel), ou dans votre fichier personnel :
+#   ~/.argosnet/ja3_blocklist.txt
+#
+# Les lignes vides et les commentaires (#) sont ignorés.
+#
+# Exemple (empreinte fictive, ne correspond à aucun trafic réel) :
+# 00000000000000000000000000000000

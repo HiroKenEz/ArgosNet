@@ -13,6 +13,7 @@ hiddenimports = collect_submodules("scapy")
 datas = [
     ("argosnet/core/detection/rules.yaml", "argosnet/core/detection"),
     ("argosnet/core/detection/blocklist.txt", "argosnet/core/detection"),
+    ("argosnet/core/detection/ja3_blocklist.txt", "argosnet/core/detection"),
 ]
 # Base OUI de mac-vendor-lookup (résolution constructeur hors-ligne), si présente.
 datas += collect_data_files("mac_vendor_lookup")

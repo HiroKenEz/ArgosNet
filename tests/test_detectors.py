@@ -13,6 +13,8 @@ from argosnet.core.detection.detectors import (
     BeaconDetector,
     BlocklistDetector,
     DnsTunnelDetector,
+    Ja3BlocklistDetector,
+    PortKnockDetector,
     RogueDhcpDetector,
 )
 from argosnet.core.detection.engine import DetectionEngine
@@ -104,6 +106,48 @@ def test_blocklist_detected():
     alerts = det.inspect(1, pkt)
     assert len(alerts) == 1
     assert alerts[0].category == "Liste noire (threat intel)"
+
+
+def test_port_knocking_detected():
+    det = PortKnockDetector()
+    alerts = []
+    for i, port in enumerate([7000, 8000, 9000]):  # 3 ports hauts distincts, chacun une fois
+        pkt = Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.50", dst="192.168.1.1") / TCP(
+            sport=40000 + i, dport=port, flags="S"
+        )
+        pkt.time = 1000.0 + i
+        alerts += det.inspect(i + 1, pkt)
+    assert any(a.category == "Port knocking" for a in alerts)
+
+
+def test_port_knocking_ignores_repeated_port():
+    det = PortKnockDetector()
+    alerts = []
+    for i in range(5):  # même port frappé plusieurs fois → pas une séquence de knock
+        pkt = Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.50", dst="192.168.1.1") / TCP(
+            sport=40000 + i, dport=8080, flags="S"
+        )
+        pkt.time = 1000.0 + i
+        alerts += det.inspect(i + 1, pkt)
+    assert not any(a.category == "Port knocking" for a in alerts)
+
+
+def test_ja3_blocklist_detected():
+    from argosnet.core.ja3 import ja3_from_client_hello
+    from test_ja3 import build_client_hello
+
+    data = build_client_hello()
+    _, digest = ja3_from_client_hello(data)
+    pkt = (
+        Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="1.2.3.4")
+        / TCP(sport=44000, dport=443, flags="PA") / Raw(data)
+    )
+    pkt.time = 1000.0
+    det = Ja3BlocklistDetector(blocklist={digest})
+    alerts = det.inspect(1, pkt)
+    assert len(alerts) == 1
+    assert alerts[0].category == "Empreinte JA3 malveillante"
+    assert alerts[0].severity == Severity.CRITICAL
 
 
 def test_rules_save_and_load_roundtrip(tmp_path):
