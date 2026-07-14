@@ -45,6 +45,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{__app_name__} {__version__} — Analyseur réseau local")
         self.resize(1200, 750)
 
+        from argosnet.ui.packet_model import load_proto_colors
+        load_proto_colors()  # couleurs de protocole personnalisées (si définies)
+
         self._interfaces: list[NetIface] = list_interfaces()
 
         self.tabs = QTabWidget()
@@ -129,6 +132,9 @@ class MainWindow(QMainWindow):
         save_action = file_menu.addAction("Enregistrer la capture…")
         save_action.triggered.connect(self.capture_view.save_pcap_dialog)
 
+        report_action = file_menu.addAction("Exporter un rapport HTML…")
+        report_action.triggered.connect(self._export_report)
+
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quitter")
         quit_action.triggered.connect(self.close)
@@ -141,6 +147,12 @@ class MainWindow(QMainWindow):
         self._notify_action = view_menu.addAction("Notifications d'alerte critique")
         self._notify_action.setCheckable(True)
         self._notify_action.setChecked(True)
+        colors_action = view_menu.addAction("Couleurs des protocoles…")
+        colors_action.triggered.connect(self._edit_colors)
+
+        detect_menu = self.menuBar().addMenu("&Détection")
+        rules_action = detect_menu.addAction("Éditer les règles IDS…")
+        rules_action.triggered.connect(self._edit_rules)
 
         stats_menu = self.menuBar().addMenu("&Statistiques")
         summary_action = stats_menu.addAction("Résumé de la capture…")
@@ -169,6 +181,56 @@ class MainWindow(QMainWindow):
         if self._tray is not None:
             self._tray.hide()
         super().closeEvent(event)
+
+    def _edit_rules(self) -> None:
+        from argosnet.ui.rules_editor import RulesEditorDialog
+
+        if RulesEditorDialog(self).exec():
+            self._reload_rules()
+            self.statusBar().showMessage("Règles de détection rechargées.", 4000)
+
+    def _reload_rules(self) -> None:
+        from argosnet.core.detection.detectors import SignatureDetector, load_rules
+
+        rules = load_rules()
+        for detector in self._detection.detectors:
+            if isinstance(detector, SignatureDetector):
+                detector.rules = rules
+
+    def _edit_colors(self) -> None:
+        from argosnet.ui.color_editor import ColorEditorDialog
+
+        if ColorEditorDialog(self).exec():
+            self.capture_view._model.refresh_colors()
+
+    def _export_report(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtWidgets import QFileDialog
+
+        from argosnet.core.report import build_html_report
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exporter un rapport", "rapport_argosnet.html", "HTML (*.html)"
+        )
+        if not path:
+            return
+        stats = self.dashboard_view._stats
+        report = build_html_report(
+            summary=stats.summary(),
+            top_talkers=stats.top_talkers(20),
+            conversations=stats.top_conversations(50),
+            alerts=self.alerts_view._alerts,
+            devices=self._db.list_devices(),
+        )
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(report)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Export impossible", str(exc))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        self.statusBar().showMessage(f"Rapport exporté : {path}", 5000)
 
     def _on_tab_changed(self, _index: int) -> None:
         # Rafraîchit l'inventaire quand on ouvre son onglet (données en base).

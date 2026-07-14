@@ -399,10 +399,22 @@ def _severity_from_str(value: str) -> Severity:
     }.get(str(value).lower(), Severity.WARNING)
 
 
+USER_RULES_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "rules.yaml")
+
+
+def bundled_rules_path() -> str:
+    """Chemin des règles livrées avec l'application (lecture seule)."""
+    return os.path.join(os.path.dirname(__file__), "rules.yaml")
+
+
 def load_rules(path: str | None = None) -> list[dict]:
-    """Charge les règles de signature depuis un fichier YAML."""
+    """Charge les règles de signature depuis un fichier YAML.
+
+    Sans chemin, privilégie les règles **utilisateur** (``~/.argosnet/rules.yaml``,
+    éditables dans l'UI) et retombe sur les règles livrées avec l'application.
+    """
     if path is None:
-        path = os.path.join(os.path.dirname(__file__), "rules.yaml")
+        path = USER_RULES_PATH if os.path.exists(USER_RULES_PATH) else bundled_rules_path()
     try:
         import yaml
         with open(path, "r", encoding="utf-8") as handle:
@@ -410,6 +422,14 @@ def load_rules(path: str | None = None) -> list[dict]:
         return list(data.get("rules", []))
     except Exception:
         return []
+
+
+def save_rules(rules: list[dict], path: str = USER_RULES_PATH) -> None:
+    """Enregistre les règles dans le fichier utilisateur (YAML)."""
+    import yaml
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump({"rules": rules}, handle, allow_unicode=True, sort_keys=False)
 
 
 def default_detectors() -> list[Detector]:

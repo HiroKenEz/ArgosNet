@@ -46,10 +46,13 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       **libellé personnalisé** éditable).
 - [x] **Onglet Conversations** (paires d'hôtes triées par volume).
 - [x] **Décodeurs enrichis** : HTTP (méthode/URL/host), TLS (SNI), DHCP, mDNS.
-- [ ] **Éditeur de règles IDS** dans l'UI (au lieu d'éditer `rules.yaml`).
+- [x] **Éditeur de règles IDS** dans l'UI (menu Détection ; règles utilisateur
+      `~/.argosnet/rules.yaml`, rechargées à chaud).
+- [x] **Export rapport HTML** d'une session (résumé, protocoles, top talkers,
+      conversations, alertes, appareils — menu Fichier).
+- [x] **Couleurs de protocole personnalisables** (menu Affichage, persistées).
 - [ ] **IO Graph** (débit par protocole dans le temps, à la Wireshark).
-- [ ] **Export rapport HTML/PDF** d'une session (stats + alertes + top talkers).
-- [ ] **Règles de coloration personnalisables**.
+- [ ] **Export PDF** (en plus du HTML).
 - [ ] **TLS JA3** et **GeoIP / ASN** pour les IP externes (carte + liste).
 
 ### 🚀 Ambitieux

@@ -6,6 +6,8 @@ lots (voir :meth:`PacketTableModel.append_records`) pour limiter le coût GUI.
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,18 +19,54 @@ from argosnet.core.dissect import PacketSummary, summarize
 COLUMNS = ["N°", "Temps", "Source", "Destination", "Protocole", "Long.", "Info"]
 
 # Coloration douce par protocole (façon Wireshark), lisible sur fond clair.
-PROTO_COLORS: dict[str, QColor] = {
-    "TCP": QColor("#e7e6ff"),
-    "UDP": QColor("#e2f0ff"),
-    "DNS": QColor("#d8f5e3"),
-    "ARP": QColor("#fbf3d0"),
-    "ICMP": QColor("#ffe0e0"),
-    "HTTP": QColor("#d5f0d5"),
-    "TLS": QColor("#efe0ff"),
-    "IPv6": QColor("#eef0f2"),
-    "IP": QColor("#f2f2f2"),
-    "Ethernet": QColor("#f6f6f6"),
+DEFAULT_PROTO_COLORS: dict[str, str] = {
+    "TCP": "#e7e6ff",
+    "UDP": "#e2f0ff",
+    "DNS": "#d8f5e3",
+    "mDNS": "#d8f5ea",
+    "DHCP": "#e6f7d0",
+    "ARP": "#fbf3d0",
+    "ICMP": "#ffe0e0",
+    "HTTP": "#d5f0d5",
+    "TLS": "#efe0ff",
+    "IPv6": "#eef0f2",
+    "IP": "#f2f2f2",
+    "Ethernet": "#f6f6f6",
 }
+
+# Couleurs courantes (modifiables par l'utilisateur), sous forme de QColor.
+PROTO_COLORS: dict[str, QColor] = {k: QColor(v) for k, v in DEFAULT_PROTO_COLORS.items()}
+
+COLORS_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "colors.json")
+
+
+def apply_proto_colors(mapping: dict[str, str]) -> None:
+    """Applique un dictionnaire {protocole: '#hex'} sur les couleurs courantes."""
+    for proto, hex_color in mapping.items():
+        PROTO_COLORS[proto] = QColor(hex_color)
+
+
+def reset_proto_colors() -> None:
+    apply_proto_colors(DEFAULT_PROTO_COLORS)
+
+
+def load_proto_colors() -> None:
+    """Charge les couleurs personnalisées depuis ~/.argosnet/colors.json (si présent)."""
+    try:
+        with open(COLORS_PATH, "r", encoding="utf-8") as handle:
+            apply_proto_colors(json.load(handle))
+    except Exception:
+        pass
+
+
+def save_proto_colors() -> None:
+    try:
+        os.makedirs(os.path.dirname(COLORS_PATH), exist_ok=True)
+        data = {proto: color.name() for proto, color in PROTO_COLORS.items()}
+        with open(COLORS_PATH, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+    except Exception:
+        pass
 
 
 @dataclass
@@ -72,6 +110,15 @@ class PacketTableModel(QAbstractTableModel):
     def all_packets(self) -> list[Any]:
         """Liste des paquets Scapy bruts (pour l'export .pcap)."""
         return [record.packet for record in self._records]
+
+    def refresh_colors(self) -> None:
+        """Repeint la table après une modification des couleurs de protocole."""
+        if self._records:
+            self.dataChanged.emit(
+                self.index(0, 0),
+                self.index(len(self._records) - 1, len(COLUMNS) - 1),
+                [Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.ForegroundRole],
+            )
 
     def row_for_number(self, number: int) -> int | None:
         """Ligne (index source) correspondant au numéro de paquet donné."""

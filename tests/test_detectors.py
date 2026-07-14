@@ -48,6 +48,15 @@ def test_packet_numbers_assigned():
     assert all(a.packet_number is not None for a in alerts)
 
 
+def test_rules_save_and_load_roundtrip(tmp_path):
+    from argosnet.core.detection.detectors import load_rules, save_rules
+
+    path = str(tmp_path / "rules.yaml")
+    rules = [{"name": "Test", "dst_port": 1234, "severity": "critical", "message": "m"}]
+    save_rules(rules, path)
+    assert load_rules(path) == rules
+
+
 def test_cleartext_creds_deduplicated():
     # Deux requêtes HTTP Basic sur la même connexion → une seule alerte (pas de spam).
     def http_basic(i):
