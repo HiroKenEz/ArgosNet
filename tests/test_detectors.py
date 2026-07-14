@@ -10,6 +10,7 @@ from scapy.packet import Raw
 
 from argosnet.core.detection.alert import Severity
 from argosnet.core.detection.detectors import (
+    BaselineAnomalyDetector,
     BeaconDetector,
     BlocklistDetector,
     DnsTunnelDetector,
@@ -148,6 +149,36 @@ def test_ja3_blocklist_detected():
     assert len(alerts) == 1
     assert alerts[0].category == "Empreinte JA3 malveillante"
     assert alerts[0].severity == Severity.CRITICAL
+
+
+def _ip_packet(src, t):
+    pkt = Ether(src="02:00:00:00:00:01") / IP(src=src, dst="192.168.1.1") / TCP(dport=80, flags="S")
+    pkt.time = t
+    return pkt
+
+
+def test_baseline_anomaly_detected():
+    det = BaselineAnomalyDetector()
+    n = 0
+    # Apprentissage : trafic calme (1 paquet toutes les 5 s pendant 30 s).
+    for k in range(6):
+        n += 1
+        assert det.inspect(n, _ip_packet("10.0.0.5", 1000.0 + k * 5)) == []
+    # Après l'apprentissage : pic de 25 paquets en une seconde → anomalie.
+    alerts = []
+    for k in range(25):
+        n += 1
+        alerts += det.inspect(n, _ip_packet("10.0.0.5", 1031.0 + k * 0.01))
+    assert any(a.category == "Anomalie de trafic" for a in alerts)
+
+
+def test_baseline_no_alert_during_learning():
+    det = BaselineAnomalyDetector()
+    # Même un pic pendant l'apprentissage ne doit pas alerter.
+    alerts = []
+    for k in range(30):
+        alerts += det.inspect(k + 1, _ip_packet("10.0.0.9", 1000.0 + k * 0.01))
+    assert alerts == []
 
 
 def test_rules_save_and_load_roundtrip(tmp_path):

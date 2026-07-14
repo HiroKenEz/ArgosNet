@@ -46,6 +46,12 @@ PORTKNOCK_MIN_PORTS = 3
 PORTKNOCK_MAX_PORTS = 7
 PORTKNOCK_MIN_PORT = 1024   # les « coups » visent des ports hauts/inhabituels
 
+# Détection d'anomalies par apprentissage : on mesure le débit « normal » de chaque
+# source pendant une fenêtre d'apprentissage, puis on signale les pics anormaux.
+BASELINE_LEARN_SECONDS = 30.0   # durée d'apprentissage (secondes de trafic observé)
+BASELINE_MIN_RATE = 20          # plancher : pas d'alerte sous ce pic (paquets/s)
+BASELINE_FACTOR = 5.0           # multiple de la moyenne apprise déclenchant l'anomalie
+
 SYN = 0x02
 ACK = 0x10
 
@@ -768,6 +774,74 @@ class Ja3BlocklistDetector(Detector):
         self._alerted = set()
 
 
+class BaselineAnomalyDetector(Detector):
+    """Apprend le débit normal par source, puis signale les pics anormaux.
+
+    Pendant les ``BASELINE_LEARN_SECONDS`` premières secondes de trafic observé, on
+    mesure le débit moyen (paquets/s) de chaque source. Ensuite, toute source dont le
+    débit instantané (fenêtre glissante d'une seconde) dépasse ``BASELINE_FACTOR`` fois
+    sa moyenne apprise — et un plancher ``BASELINE_MIN_RATE`` — est signalée. Approche
+    heuristique : le pic est jugé relativement au comportement habituel de la source.
+    """
+
+    def __init__(self) -> None:
+        self.events: dict[str, deque] = defaultdict(deque)  # src -> temps (fenêtre 1 s)
+        self.learn_counts: dict[str, int] = defaultdict(int)
+        self.baseline: dict[str, float] = {}                # src -> débit moyen appris
+        self._alerted: set[str] = set()
+        self._t0: float | None = None
+        self._n = 0
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        if not pkt.haslayer(IP):
+            return []
+        src = pkt.getlayer(IP).src
+        now = _pkt_time(pkt)
+        if self._t0 is None:
+            self._t0 = now
+        elapsed = now - self._t0
+
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            _prune_events(self.events, now, 1.0, lambda t: t)
+
+        window = self.events[src]
+        window.append(now)
+        while window and now - window[0] > 1.0:
+            window.popleft()
+        rate = len(window)
+
+        if elapsed < BASELINE_LEARN_SECONDS:
+            # Phase d'apprentissage : on compte, on n'alerte pas.
+            self.learn_counts[src] += 1
+            return []
+
+        base = self.baseline.get(src)
+        if base is None:
+            base = self.learn_counts.get(src, 0) / BASELINE_LEARN_SECONDS
+            self.baseline[src] = base
+        threshold = max(BASELINE_MIN_RATE, BASELINE_FACTOR * base)
+        if rate >= threshold and src not in self._alerted:
+            self._alerted.add(src)
+            return [
+                Alert(
+                    severity=Severity.WARNING,
+                    category="Anomalie de trafic",
+                    source=src,
+                    detail=(
+                        f"{src} émet {rate} paquets/s, très au-dessus de son débit habituel "
+                        f"(~{base:.1f}/s appris) — pic de trafic anormal."
+                    ),
+                    timestamp=now,
+                    packet_number=number,
+                )
+            ]
+        return []
+
+    def reset(self) -> None:
+        self.__init__()
+
+
 def _severity_from_str(value: str) -> Severity:
     return {
         "info": Severity.INFO,
@@ -824,5 +898,6 @@ def default_detectors() -> list[Detector]:
         PortKnockDetector(),
         BlocklistDetector(),
         Ja3BlocklistDetector(),
+        BaselineAnomalyDetector(),
         SignatureDetector(),
     ]

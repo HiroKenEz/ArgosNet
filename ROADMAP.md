@@ -64,7 +64,8 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       `~/.argosnet/blocklist.txt` utilisateur).
 - [x] Détections restantes : **port knocking** (séquence de ports hauts distincts) et
       **empreinte TLS JA3** (liste noire de clients TLS malveillants).
-- [ ] **Baseline / détection d'anomalies** (apprentissage du trafic normal).
+- [x] **Baseline / détection d'anomalies** (apprentissage du trafic normal) —
+      apprend le débit par source puis signale les pics anormaux. *(detectors.py)*
 - [x] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7) — case
       « Anneau » dans la barre de capture ; `RingWriter` borne l'espace disque
       (fichiers rotatifs, quota configurable). *(capture.py)*
