@@ -1,0 +1,12 @@
+# Liste noire d'adresses IP (threat intel) — une IP par ligne, « # » = commentaire.
+#
+# Les entrées ci-dessous sont des adresses de DOCUMENTATION (RFC 5737), inoffensives :
+# elles servent d'exemple et à la démonstration, sans jamais flaguer du vrai trafic.
+#
+# Pour une vraie protection, ajoutez vos propres IP (ou celles de flux de threat intel
+# comme abuse.ch / Feodo Tracker) dans ~/.argosnet/blocklist.txt — ce fichier utilisateur
+# est fusionné avec celui-ci au démarrage.
+
+192.0.2.66
+198.51.100.66
+203.0.113.66

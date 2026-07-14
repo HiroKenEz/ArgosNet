@@ -1,10 +1,20 @@
 """Tests du moteur de détection (mini-IDS)."""
+import os
+
 from fixtures import build_attack_packets, build_sample_packets
-from scapy.layers.inet import IP, TCP
+from scapy.layers.dhcp import BOOTP, DHCP
+from scapy.layers.dns import DNS, DNSQR
+from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import Ether
 from scapy.packet import Raw
 
 from argosnet.core.detection.alert import Severity
+from argosnet.core.detection.detectors import (
+    BeaconDetector,
+    BlocklistDetector,
+    DnsTunnelDetector,
+    RogueDhcpDetector,
+)
 from argosnet.core.detection.engine import DetectionEngine
 
 
@@ -46,6 +56,54 @@ def test_reset_clears_state():
 def test_packet_numbers_assigned():
     alerts = DetectionEngine().feed(build_attack_packets())
     assert all(a.packet_number is not None for a in alerts)
+
+
+def test_dns_tunnel_detected():
+    label = os.urandom(24).hex()  # 48 caractères hexadécimaux, haute entropie
+    pkt = (
+        Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="8.8.8.8")
+        / UDP(sport=5000, dport=53) / DNS(rd=1, qd=DNSQR(qname=f"{label}.exfil.com"))
+    )
+    pkt.time = 1000.0
+    alerts = DnsTunnelDetector().inspect(1, pkt)
+    assert len(alerts) == 1
+    assert alerts[0].category == "Tunneling DNS"
+
+
+def test_beaconing_detected():
+    det = BeaconDetector()
+    alerts = []
+    for i in range(5):  # 5 connexions à intervalle régulier de 10 s
+        pkt = Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="5.6.7.8") / TCP(
+            sport=40000 + i, dport=443, flags="S"
+        )
+        pkt.time = 1000.0 + i * 10
+        alerts += det.inspect(i + 1, pkt)
+    assert any(a.category == "Beaconing (C2 potentiel)" for a in alerts)
+
+
+def test_rogue_dhcp_detected():
+    det = RogueDhcpDetector()
+
+    def offer(server_ip):
+        return (
+            Ether(src="02:00:00:00:00:01") / IP(src=server_ip, dst="255.255.255.255")
+            / UDP(sport=67, dport=68) / BOOTP(op=2) / DHCP(options=[("message-type", "offer"), "end"])
+        )
+
+    assert det.inspect(1, offer("192.168.1.1")) == []          # 1er serveur : OK
+    alerts = det.inspect(2, offer("192.168.1.66"))             # 2e serveur : rogue
+    assert len(alerts) == 1
+    assert alerts[0].severity == Severity.CRITICAL
+
+
+def test_blocklist_detected():
+    det = BlocklistDetector(blocklist={"203.0.113.66"})
+    pkt = Ether() / IP(src="192.168.1.10", dst="203.0.113.66") / TCP(dport=443, flags="S")
+    pkt.time = 1000.0
+    alerts = det.inspect(1, pkt)
+    assert len(alerts) == 1
+    assert alerts[0].category == "Liste noire (threat intel)"
 
 
 def test_rules_save_and_load_roundtrip(tmp_path):

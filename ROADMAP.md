@@ -56,10 +56,11 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [ ] **TLS JA3** et **GeoIP / ASN** pour les IP externes (carte + liste).
 
 ### 🚀 Ambitieux
-- [ ] **Détection étendue** : DNS tunneling, *beaconing* C2 (périodicité), rogue DHCP,
-      port knocking, empreinte TLS JA3.
+- [x] **Détection étendue** : DNS tunneling, *beaconing* C2 (périodicité), serveur DHCP rogue.
+- [x] **Threat intel** : comparaison des IP à une liste noire (fichier livré +
+      `~/.argosnet/blocklist.txt` utilisateur).
+- [ ] Détections restantes : port knocking, empreinte TLS JA3.
 - [ ] **Baseline / détection d'anomalies** (apprentissage du trafic normal).
-- [ ] **Threat intel** : comparaison des IP à une blocklist (abuse.ch / Feodo…).
 - [ ] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7).
 - [ ] **Rejeu / injection de paquets** (Scapy send).
 - [ ] **Multi-langue** (EN/FR).

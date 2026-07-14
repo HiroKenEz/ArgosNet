@@ -36,6 +36,7 @@ python -m nuitka --standalone --assume-yes-for-downloads `
   --include-package=scapy `
   --include-package=pyqtgraph `
   --include-data-files=argosnet/core/detection/rules.yaml=argosnet/core/detection/rules.yaml `
+  --include-data-files=argosnet/core/detection/blocklist.txt=argosnet/core/detection/blocklist.txt `
   --windows-console-mode=disable `
   --company-name=ArgosNet --product-name=ArgosNet `
   --file-version=0.1.0 --product-version=0.1.0 `

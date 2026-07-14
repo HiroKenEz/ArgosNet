@@ -86,7 +86,7 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 |--------|-------------|
 | **Scan réseau** | Découverte ARP des hôtes, scan de ports, résolution constructeur/nom |
 | **Capture & analyse** | Sniffing live, décodage multi-couches, filtres, export/import `.pcap` |
-| **Détection de menaces** | ARP spoofing, scans, nouvel appareil, mini-IDS à règles YAML |
+| **Détection de menaces** | ARP spoofing, scans/balayages, SYN flood, nouvel appareil, identifiants en clair, **tunneling DNS**, **beaconing C2**, **serveur DHCP rogue**, **threat intel** (liste noire d'IP), et mini-IDS à règles YAML éditables |
 | **Statistiques** | Débit temps réel, répartition par protocole, top talkers |
 | **Carte réseau** | Graphe nœud-lien des hôtes et de leurs échanges (local vs externe) |
 | **Conversations** | Paires d'hôtes triées par volume |

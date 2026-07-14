@@ -6,8 +6,9 @@ Chaque détecteur est un objet à état : il reçoit les paquets un par un via
 """
 from __future__ import annotations
 
+import math
 import os
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from typing import Any
 
 from argosnet.core.detection.alert import Alert, Severity
@@ -28,6 +29,14 @@ HOSTSWEEP_WINDOW = 5.0
 HOSTSWEEP_HOSTS = 15       # hôtes distincts balayés → balayage réseau
 SYNFLOOD_WINDOW = 3.0
 SYNFLOOD_COUNT = 100       # SYN vers une même cible dans la fenêtre → flood
+
+# Détections avancées.
+DNS_TUNNEL_LABEL_LEN = 35  # longueur mini d'un label sous-domaine « encodé »
+DNS_TUNNEL_ENTROPY = 3.5   # entropie mini (bits/caractère) pour juger un label aléatoire
+BEACON_MIN_EVENTS = 5      # nb mini de connexions pour juger d'une périodicité
+BEACON_MAX_JITTER = 0.15   # coefficient de variation maxi des intervalles (régularité)
+BEACON_MIN_INTERVAL = 1.0
+BEACON_MAX_INTERVAL = 3600.0
 
 SYN = 0x02
 ACK = 0x10
@@ -391,6 +400,226 @@ class SignatureDetector(Detector):
         self._alerted = set()
 
 
+def _entropy(text: str) -> float:
+    """Entropie de Shannon (bits par caractère) d'une chaîne."""
+    if not text:
+        return 0.0
+    n = len(text)
+    return -sum((c / n) * math.log2(c / n) for c in Counter(text).values())
+
+
+def _dns_query_name(pkt) -> str | None:
+    """Nom de domaine d'une requête DNS (None si ce n'est pas une requête DNS)."""
+    try:
+        from scapy.layers.dns import DNS
+    except Exception:
+        return None
+    if not pkt.haslayer(DNS):
+        return None
+    dns = pkt.getlayer(DNS)
+    if int(getattr(dns, "qr", 0)) != 0:  # 0 = requête
+        return None
+    qd = dns.qd
+    if not qd:
+        return None
+    try:
+        entry = qd[0]
+    except (TypeError, IndexError, KeyError):
+        entry = qd
+    try:
+        return entry.qname.decode(errors="replace").rstrip(".")
+    except Exception:
+        return None
+
+
+class DnsTunnelDetector(Detector):
+    """Détecte l'exfiltration via DNS : sous-domaines longs et à haute entropie."""
+
+    def __init__(self) -> None:
+        self._alerted: set[str] = set()
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        qname = _dns_query_name(pkt)
+        if not qname:
+            return []
+        labels = qname.split(".")
+        if len(labels) < 3:
+            return []
+        registered = ".".join(labels[-2:])
+        sub_labels = labels[:-2]
+        longest = max(sub_labels, key=len) if sub_labels else ""
+        if len(longest) >= DNS_TUNNEL_LABEL_LEN and _entropy(longest) >= DNS_TUNNEL_ENTROPY:
+            if registered in self._alerted:
+                return []
+            self._alerted.add(registered)
+            return [
+                Alert(
+                    severity=Severity.WARNING,
+                    category="Tunneling DNS",
+                    source=registered,
+                    detail=(
+                        f"Requête DNS avec un sous-domaine long et aléatoire vers « {registered} » "
+                        "— possible exfiltration de données via DNS."
+                    ),
+                    timestamp=_pkt_time(pkt),
+                    packet_number=number,
+                )
+            ]
+        return []
+
+    def reset(self) -> None:
+        self._alerted = set()
+
+
+class BeaconDetector(Detector):
+    """Détecte un trafic périodique régulier (possible balise de commande C2)."""
+
+    def __init__(self) -> None:
+        self.events: dict = defaultdict(lambda: deque(maxlen=12))
+        self._alerted: set = set()
+        self._n = 0
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+            return []
+        tcp = pkt.getlayer(TCP)
+        if not (int(tcp.flags) & SYN) or (int(tcp.flags) & ACK):
+            return []
+        ip = pkt.getlayer(IP)
+        key = (ip.src, ip.dst, int(tcp.dport))
+        now = _pkt_time(pkt)
+
+        self._n += 1
+        if self._n % CLEANUP_EVERY == 0:
+            for k in [k for k, dq in self.events.items()
+                      if dq and now - dq[-1] > BEACON_MAX_INTERVAL * 3]:
+                del self.events[k]
+
+        times = self.events[key]
+        times.append(now)
+        if key in self._alerted or len(times) < BEACON_MIN_EVENTS:
+            return []
+        intervals = [b - a for a, b in zip(times, list(times)[1:])]
+        mean = sum(intervals) / len(intervals)
+        if not (BEACON_MIN_INTERVAL <= mean <= BEACON_MAX_INTERVAL):
+            return []
+        variance = sum((x - mean) ** 2 for x in intervals) / len(intervals)
+        cv = (variance ** 0.5) / mean if mean else 1.0
+        if cv <= BEACON_MAX_JITTER:
+            self._alerted.add(key)
+            return [
+                Alert(
+                    severity=Severity.WARNING,
+                    category="Beaconing (C2 potentiel)",
+                    source=ip.src,
+                    detail=(
+                        f"{ip.src} contacte {ip.dst}:{int(tcp.dport)} à intervalle très régulier "
+                        f"(~{mean:.0f}s) — comportement de balise de commande (C2)."
+                    ),
+                    timestamp=now,
+                    packet_number=number,
+                )
+            ]
+        return []
+
+    def reset(self) -> None:
+        self.__init__()
+
+
+class RogueDhcpDetector(Detector):
+    """Signale un second serveur DHCP répondant sur le réseau (possible serveur rogue)."""
+
+    def __init__(self) -> None:
+        self.servers: set[str] = set()
+        self._alerted: set[str] = set()
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        try:
+            from scapy.layers.dhcp import BOOTP
+        except Exception:
+            return []
+        if not (pkt.haslayer(BOOTP) and pkt.haslayer(IP)):
+            return []
+        if int(pkt.getlayer(BOOTP).op) != 2:  # BOOTREPLY = réponse d'un serveur
+            return []
+        server = pkt.getlayer(IP).src
+        already_known = server in self.servers
+        self.servers.add(server)
+        if not already_known and len(self.servers) > 1 and server not in self._alerted:
+            self._alerted.add(server)
+            return [
+                Alert(
+                    severity=Severity.CRITICAL,
+                    category="Serveur DHCP rogue",
+                    source=server,
+                    detail=(
+                        f"Un second serveur DHCP répond sur le réseau ({server}). "
+                        "Possible serveur DHCP pirate (attaque de l'homme du milieu)."
+                    ),
+                    timestamp=_pkt_time(pkt),
+                    packet_number=number,
+                )
+            ]
+        return []
+
+    def reset(self) -> None:
+        self.__init__()
+
+
+BUNDLED_BLOCKLIST = os.path.join(os.path.dirname(__file__), "blocklist.txt")
+USER_BLOCKLIST = os.path.join(os.path.expanduser("~"), ".argosnet", "blocklist.txt")
+
+
+def load_blocklist(paths: list[str] | None = None) -> set[str]:
+    """Charge une liste noire d'IP (fichier livré + fichier utilisateur)."""
+    if paths is None:
+        paths = [BUNDLED_BLOCKLIST, USER_BLOCKLIST]
+    ips: set[str] = set()
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    entry = line.split("#", 1)[0].strip()
+                    if entry:
+                        ips.add(entry)
+        except Exception:
+            continue
+    return ips
+
+
+class BlocklistDetector(Detector):
+    """Alerte sur toute communication avec une IP de la liste noire (threat intel)."""
+
+    def __init__(self, blocklist: set[str] | None = None) -> None:
+        self.blocklist = blocklist if blocklist is not None else load_blocklist()
+        self._alerted: set[str] = set()
+
+    def inspect(self, number: int, pkt: Any) -> list[Alert]:
+        if not self.blocklist or not pkt.haslayer(IP):
+            return []
+        ip = pkt.getlayer(IP)
+        for addr in (ip.src, ip.dst):
+            if addr in self.blocklist and addr not in self._alerted:
+                self._alerted.add(addr)
+                return [
+                    Alert(
+                        severity=Severity.CRITICAL,
+                        category="Liste noire (threat intel)",
+                        source=addr,
+                        detail=(
+                            f"Communication avec {addr}, présent sur la liste noire "
+                            "d'adresses malveillantes."
+                        ),
+                        timestamp=_pkt_time(pkt),
+                        packet_number=number,
+                    )
+                ]
+        return []
+
+    def reset(self) -> None:
+        self._alerted = set()
+
+
 def _severity_from_str(value: str) -> Severity:
     return {
         "info": Severity.INFO,
@@ -441,5 +670,9 @@ def default_detectors() -> list[Detector]:
         SynFloodDetector(),
         NewDeviceDetector(),
         CleartextCredsDetector(),
+        DnsTunnelDetector(),
+        BeaconDetector(),
+        RogueDhcpDetector(),
+        BlocklistDetector(),
         SignatureDetector(),
     ]
