@@ -85,9 +85,9 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 | Pilier | Description |
 |--------|-------------|
 | **Scan réseau** | Découverte ARP des hôtes, scan de ports, résolution constructeur/nom |
-| **Capture & analyse** | Sniffing live, décodage multi-couches, filtres, export/import `.pcap` |
+| **Capture & analyse** | Sniffing live, décodage multi-couches, filtres, export/import `.pcap`, **capture en anneau** (fichiers rotatifs pour monitoring continu) |
 | **Détection de menaces** | ARP spoofing, scans/balayages, SYN flood, nouvel appareil, identifiants en clair, **tunneling DNS**, **beaconing C2**, **serveur DHCP rogue**, **threat intel** (liste noire d'IP), et mini-IDS à règles YAML éditables |
-| **Statistiques** | Débit temps réel, répartition par protocole, top talkers |
+| **Statistiques** | Débit temps réel, **IO Graph par protocole**, répartition par protocole, top talkers |
 | **Carte réseau** | Graphe nœud-lien des hôtes et de leurs échanges (local vs externe) |
 | **Conversations** | Paires d'hôtes triées par volume |
 | **Inventaire** | Appareils connus (MAC / IP / constructeur / vu le), **libellés personnalisés** |

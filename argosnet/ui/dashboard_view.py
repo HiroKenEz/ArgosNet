@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from argosnet.core.stats import StatsEngine
 
 REFRESH_MS = 1000
+IO_COLORS = ["#3b7dd8", "#d9534f", "#5cb85c", "#f0ad4e", "#9b59b6", "#1abc9c"]
 
 
 def format_bytes(num: float) -> str:
@@ -92,6 +93,15 @@ class DashboardView(QWidget):
         )
         root.addWidget(self._tput_plot, 2)
 
+        # IO Graph : une courbe de débit par protocole (façon Wireshark).
+        self._io_plot = pg.PlotWidget(title="Débit par protocole (paquets/s)")
+        self._io_plot.setLabel("bottom", "temps", units="s")
+        self._io_plot.setLabel("left", "paquets/s")
+        self._io_plot.showGrid(x=True, y=True, alpha=0.2)
+        self._io_plot.addLegend(offset=(10, 10))
+        self._io_curves: dict[str, pg.PlotDataItem] = {}
+        root.addWidget(self._io_plot, 2)
+
         # Bas : répartition protocoles | top talkers.
         split = QSplitter(Qt.Orientation.Horizontal)
 
@@ -143,8 +153,23 @@ class DashboardView(QWidget):
             self._tput_curve.setData([], [])
             self._tile_rate.set_value("—")
 
+        self._refresh_io_graph()
         self._refresh_protocols()
         self._refresh_talkers()
+
+    def _refresh_io_graph(self) -> None:
+        seconds, series = self._stats.throughput_by_protocol(len(IO_COLORS))
+        # Retire les courbes des protocoles qui ne sont plus dans le top.
+        for proto in list(self._io_curves):
+            if proto not in series:
+                self._io_plot.removeItem(self._io_curves.pop(proto))
+        for index, (proto, values) in enumerate(series.items()):
+            curve = self._io_curves.get(proto)
+            if curve is None:
+                color = IO_COLORS[index % len(IO_COLORS)]
+                curve = self._io_plot.plot(pen=pg.mkPen(color, width=2), name=proto)
+                self._io_curves[proto] = curve
+            curve.setData(seconds, values)
 
     def _refresh_protocols(self) -> None:
         breakdown = self._stats.protocol_breakdown()

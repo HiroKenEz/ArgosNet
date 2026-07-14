@@ -51,7 +51,8 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] **Export rapport HTML** d'une session (résumé, protocoles, top talkers,
       conversations, alertes, appareils — menu Fichier).
 - [x] **Couleurs de protocole personnalisables** (menu Affichage, persistées).
-- [ ] **IO Graph** (débit par protocole dans le temps, à la Wireshark).
+- [x] **IO Graph** (débit par protocole dans le temps, à la Wireshark) —
+      courbe empilée par protocole (top N) dans le Dashboard.
 - [ ] **Export PDF** (en plus du HTML).
 - [ ] **TLS JA3** et **GeoIP / ASN** pour les IP externes (carte + liste).
 
@@ -61,7 +62,9 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       `~/.argosnet/blocklist.txt` utilisateur).
 - [ ] Détections restantes : port knocking, empreinte TLS JA3.
 - [ ] **Baseline / détection d'anomalies** (apprentissage du trafic normal).
-- [ ] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7).
+- [x] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7) — case
+      « Anneau » dans la barre de capture ; `RingWriter` borne l'espace disque
+      (fichiers rotatifs, quota configurable). *(capture.py)*
 - [ ] **Rejeu / injection de paquets** (Scapy send).
 - [ ] **Multi-langue** (EN/FR).
 - [ ] **Planification de scans réseau**.

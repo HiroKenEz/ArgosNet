@@ -34,6 +34,7 @@ class StatsEngine:
         self.conv_bytes: Counter[tuple[str, str]] = Counter()
         self.per_second_packets: dict[int, int] = defaultdict(int)
         self.per_second_bytes: dict[int, int] = defaultdict(int)
+        self.per_second_proto: dict[int, dict] = defaultdict(lambda: defaultdict(int))
         self._t0: float | None = None
         self._max_bucket: int = 0
 
@@ -63,6 +64,7 @@ class StatsEngine:
         bucket = int(ts - self._t0) if self._t0 is not None else 0
         self.per_second_packets[bucket] += 1
         self.per_second_bytes[bucket] += length
+        self.per_second_proto[bucket][proto] += 1
 
         # Purge des secondes trop anciennes (fenêtre glissante) quand le temps avance.
         if bucket > self._max_bucket:
@@ -72,6 +74,7 @@ class StatsEngine:
                 for old in [b for b in self.per_second_packets if b < cutoff]:
                     del self.per_second_packets[old]
                     self.per_second_bytes.pop(old, None)
+                    self.per_second_proto.pop(old, None)
 
     def add_packets(self, packets) -> None:
         for packet in packets:
@@ -124,3 +127,18 @@ class StatsEngine:
         pps = [self.per_second_packets.get(s, 0) for s in seconds]
         kbps = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
         return seconds, pps, kbps
+
+    def throughput_by_protocol(self, top_n: int = 5) -> tuple[list[int], dict[str, list[int]]]:
+        """Retourne (secondes, {protocole: paquets/s}) pour les ``top_n`` protocoles."""
+        if not self.per_second_proto:
+            return [], {}
+        top_protocols = [name for name, _ in self.proto_counts.most_common(top_n)]
+        buckets = self.per_second_proto
+        last = max(buckets)
+        first = max(min(buckets), last - THROUGHPUT_WINDOW + 1)
+        seconds = list(range(first, last + 1))
+        series = {
+            proto: [buckets.get(s, {}).get(proto, 0) for s in seconds]
+            for proto in top_protocols
+        }
+        return seconds, series

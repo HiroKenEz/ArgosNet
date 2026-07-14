@@ -21,6 +21,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QCompleter,
     QFileDialog,
@@ -41,7 +42,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from argosnet.core.capture import CaptureController
+from argosnet.core.capture import CaptureController, RingWriter
 from argosnet.core.display_filter import compile_filter
 from argosnet.core.dissect import hexdump, layer_tree
 from argosnet.core.interfaces import NetIface, list_interfaces
@@ -57,6 +58,9 @@ def _has_tcp(packet) -> bool:
 
 
 FILTERS_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "filters.json")
+RING_DIR = os.path.join(os.path.expanduser("~"), ".argosnet", "ring")
+RING_MAX_FILES = 10       # nombre de .pcap conservés (fenêtre glissante)
+RING_MAX_PACKETS = 50_000  # paquets par fichier avant rotation
 BUILTIN_FILTERS = [
     "dns", "arp", "icmp", "proto==tcp", "proto==udp",
     "tcp.port==443", "tcp.port==80", "udp.port==53",
@@ -174,6 +178,13 @@ class CaptureView(QWidget):
         self._bpf_edit = QLineEdit()
         self._bpf_edit.setPlaceholderText("ex. tcp port 443, host 192.168.1.1…")
         bar1.addWidget(self._bpf_edit, 1)
+        self._ring_check = QCheckBox("Anneau")
+        self._ring_check.setToolTip(
+            "Capture en anneau : écrit le trafic dans des fichiers .pcap rotatifs\n"
+            f"({RING_MAX_FILES} fichiers × {RING_MAX_PACKETS:,} paquets max) sous\n"
+            f"{RING_DIR}\nIdéal pour une surveillance continue sans saturer le disque."
+        )
+        bar1.addWidget(self._ring_check)
         self._start_btn = QPushButton("▶ Démarrer")
         self._stop_btn = QPushButton("■ Arrêter")
         self._stop_btn.setEnabled(False)
@@ -275,8 +286,18 @@ class CaptureView(QWidget):
         iface_arg = None
         if iface is not None:
             iface_arg = iface.raw if (iface.capturable and iface.raw is not None) else iface.name
+        ring = None
+        if self._ring_check.isChecked():
+            try:
+                ring = RingWriter(RING_DIR, max_files=RING_MAX_FILES, max_packets=RING_MAX_PACKETS)
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.critical(
+                    self, "Capture en anneau impossible",
+                    f"Impossible de préparer le dossier d'anneau :\n{exc}",
+                )
+                return
         try:
-            self._controller.start(iface_arg, self._bpf_edit.text().strip() or None)
+            self._controller.start(iface_arg, self._bpf_edit.text().strip() or None, ring=ring)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
                 self,
@@ -291,6 +312,7 @@ class CaptureView(QWidget):
         self._stop_btn.setEnabled(True)
         self._iface_combo.setEnabled(False)
         self._bpf_edit.setEnabled(False)
+        self._ring_check.setEnabled(False)
 
     def stop_capture_if_running(self) -> None:
         """Arrête proprement la capture (appelé à la fermeture de l'application)."""
@@ -305,6 +327,7 @@ class CaptureView(QWidget):
         self._stop_btn.setEnabled(False)
         self._iface_combo.setEnabled(True)
         self._bpf_edit.setEnabled(True)
+        self._ring_check.setEnabled(True)
 
     def _drain(self) -> None:
         packets = self._controller.drain()

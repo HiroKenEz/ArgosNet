@@ -50,6 +50,24 @@ def test_summary():
     assert s["distinct_talkers"] > 0
 
 
+def test_throughput_by_protocol():
+    seconds, series = _engine().throughput_by_protocol(5)
+    # Les protocoles retournés sont ceux du top ; TCP y figure (2 paquets).
+    assert "TCP" in series
+    # Chaque série a la même longueur que l'axe des secondes.
+    assert all(len(values) == len(seconds) for values in series.values())
+    # La somme sur toutes les courbes vaut le nombre de paquets des protocoles du top.
+    top = {name for name, _ in _engine().proto_counts.most_common(5)}
+    expected = sum(_engine().proto_counts[name] for name in top)
+    assert sum(sum(v) for v in series.values()) == expected
+
+
+def test_throughput_by_protocol_empty():
+    seconds, series = StatsEngine().throughput_by_protocol()
+    assert seconds == []
+    assert series == {}
+
+
 def test_throughput_window_bounds_series():
     # Deux paquets très éloignés dans le temps : la fenêtre glissante purge le premier,
     # mais le total cumulé n'est pas affecté.
