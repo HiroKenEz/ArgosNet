@@ -37,9 +37,12 @@ def main() -> int:
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    from PySide6.QtGui import QIcon
+
     from argosnet import __app_name__
     from argosnet.core.environment import environment_warnings
     from argosnet.core.i18n import load_language
+    from argosnet.core.resources import app_icon_path
     from argosnet.ui.main_window import MainWindow
     from argosnet.ui.theme import apply_theme
 
@@ -47,6 +50,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
+    app.setWindowIcon(QIcon(app_icon_path()))
     apply_theme(app, dark=True)  # thème sombre par défaut (basculable dans le menu Affichage)
 
     window = MainWindow()

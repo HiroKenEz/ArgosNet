@@ -14,6 +14,7 @@ datas = [
     ("argosnet/core/detection/rules.yaml", "argosnet/core/detection"),
     ("argosnet/core/detection/blocklist.txt", "argosnet/core/detection"),
     ("argosnet/core/detection/ja3_blocklist.txt", "argosnet/core/detection"),
+    ("argosnet/resources/argosnet.ico", "argosnet/resources"),
 ]
 # Base OUI de mac-vendor-lookup (résolution constructeur hors-ligne), si présente.
 datas += collect_data_files("mac_vendor_lookup")
@@ -50,4 +51,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="argosnet/resources/argosnet.ico",
 )

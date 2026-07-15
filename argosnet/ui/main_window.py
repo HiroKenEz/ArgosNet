@@ -46,6 +46,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{__app_name__} {__version__} — {tr('Analyseur réseau local')}")
         self.resize(1200, 750)
 
+        from PySide6.QtGui import QIcon
+
+        from argosnet.core.resources import app_icon_path
+        self._app_icon = QIcon(app_icon_path())
+        self.setWindowIcon(self._app_icon)
+
         from argosnet.ui.packet_model import load_proto_colors
         load_proto_colors()  # couleurs de protocole personnalisées (si définies)
 
@@ -112,7 +118,8 @@ class MainWindow(QMainWindow):
     def _setup_notifications(self) -> None:
         self._tray = None
         if QSystemTrayIcon.isSystemTrayAvailable():
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+            icon = self._app_icon if not self._app_icon.isNull() else \
+                self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
             self._tray = QSystemTrayIcon(icon, self)
             self._tray.setToolTip("ArgosNet")
             self._tray.show()

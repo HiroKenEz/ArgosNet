@@ -84,4 +84,6 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] Build Nuitka (réduit les faux positifs antivirus) — voir [DISTRIBUTION.md](DISTRIBUTION.md).
 - [ ] Installeur Inno Setup + signature de code (certificat OV/EV).
 - [ ] Release GitHub avec le ZIP téléchargeable.
-- [ ] Icône d'application.
+- [x] Icône d'application — œil « Argos » (`argosnet/resources/argosnet.ico`,
+      multi-tailles), câblée dans la fenêtre, le tray et le packaging. Régénérable
+      via `python tools/make_icon.py`.

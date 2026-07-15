@@ -1,5 +1,7 @@
 # ArgosNet
 
+<img src="docs/icon.png" alt="Logo ArgosNet" width="96" align="right">
+
 [![Tests](https://github.com/HiroKenEz/ArgosNet/actions/workflows/tests.yml/badge.svg)](https://github.com/HiroKenEz/ArgosNet/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Licence](https://img.shields.io/badge/licence-GPL--3.0-green)
