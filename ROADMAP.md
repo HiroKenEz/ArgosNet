@@ -57,7 +57,9 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       sans dépendance externe. *(main_window.py)*
 - [x] **Empreinte TLS JA3** : calculée depuis le ClientHello (affichée dans l'info TLS)
       et comparée à une liste noire JA3 (threat intel indépendante de l'IP).
-- [ ] **GeoIP / ASN** pour les IP externes (carte + liste).
+- [x] **GeoIP / ASN** pour les IP externes — classification hors-ligne
+      (public/privé/CGN/…) toujours active + colonne **Zone** dans Conversations ;
+      enrichissement **pays/ASN** optionnel via MaxMind GeoLite2 (`geoip2`). *(geoip.py)*
 
 ### 🚀 Ambitieux
 - [x] **Détection étendue** : DNS tunneling, *beaconing* C2 (périodicité), serveur DHCP rogue.

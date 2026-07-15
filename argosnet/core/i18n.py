@@ -91,6 +91,17 @@ _EN: dict[str, str] = {
     "Planifié : scan toutes les {minutes} min.": "Scheduled: scan every {minutes} min.",
     "Relance automatiquement la découverte d'hôtes à intervalle régulier.":
         "Automatically re-runs host discovery at a regular interval.",
+    # Onglet Conversations
+    "Hôte A": "Host A",
+    "Hôte B": "Host B",
+    "Paquets": "Packets",
+    "Volume": "Volume",
+    "Zone": "Zone",
+    "local": "local",
+    "Conversations entre hôtes (triées par volume).":
+        "Host conversations (sorted by volume).",
+    "{count} conversation(s) — triées par volume.":
+        "{count} conversation(s) — sorted by volume.",
 }
 
 _CATALOG: dict[str, dict[str, str]] = {"en": _EN}

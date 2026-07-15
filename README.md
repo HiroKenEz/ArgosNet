@@ -91,7 +91,7 @@ Le **Dashboard** se remplit automatiquement, et les alertes peuvent être export
 | **Détection de menaces** | ARP spoofing, scans/balayages, SYN flood, nouvel appareil, identifiants en clair, **tunneling DNS**, **beaconing C2**, **serveur DHCP rogue**, **port knocking**, **détection d'anomalies** (apprentissage du débit), **threat intel** (liste noire d'IP + **empreintes JA3**), et mini-IDS à règles YAML éditables |
 | **Statistiques** | Débit temps réel, **IO Graph par protocole**, répartition par protocole, top talkers |
 | **Carte réseau** | Graphe nœud-lien des hôtes et de leurs échanges (local vs externe) |
-| **Conversations** | Paires d'hôtes triées par volume |
+| **Conversations** | Paires d'hôtes triées par volume, **zone/GeoIP** de l'hôte externe |
 | **Inventaire** | Appareils connus (MAC / IP / constructeur / vu le), **libellés personnalisés** |
 | **Follow Stream** | Réassemblage d'un flux TCP (clic droit sur un paquet) |
 | **Rapports** | Export d'une session en **HTML ou PDF** (résumé, protocoles, top talkers, conversations, alertes, appareils) |
@@ -148,3 +148,16 @@ Les signatures du mini-IDS sont éditables dans
 [`argosnet/core/detection/rules.yaml`](argosnet/core/detection/rules.yaml) : chaque règle
 combine un `dst_port` et/ou une sous-chaîne `contains`, avec un niveau de gravité. Ajoutez
 vos règles sans toucher au code.
+
+## Géolocalisation (GeoIP) — optionnelle
+
+La colonne **Zone** de l'onglet Conversations classe hors-ligne chaque hôte externe
+(public / privé / CGN / …), sans aucune configuration. Pour l'enrichir avec le **pays**
+et l'**ASN** :
+
+1. `pip install geoip2`
+2. Téléchargez les bases **MaxMind GeoLite2** (`GeoLite2-Country.mmdb` et/ou
+   `GeoLite2-ASN.mmdb`, compte gratuit requis) et placez-les dans `~/.argosnet/`.
+
+Sans ces éléments, seule la classification hors-ligne est affichée — **aucune requête
+réseau n'est jamais effectuée**.
