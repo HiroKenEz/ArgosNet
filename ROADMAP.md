@@ -72,7 +72,6 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] **Capture en anneau** avec rotation `.pcap` (monitoring 24/7) — case
       « Anneau » dans la barre de capture ; `RingWriter` borne l'espace disque
       (fichiers rotatifs, quota configurable). *(capture.py)*
-- [ ] **Rejeu / injection de paquets** (Scapy send).
 - [x] **Multi-langue** (EN/FR) — infra i18n légère (`core/i18n.py`), langue
       persistée dans `~/.argosnet/config.json`, bascule dans **Affichage → Langue**
       (chrome principale traduite ; appliquée au redémarrage).
@@ -86,8 +85,6 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 - [x] Build Nuitka (réduit les faux positifs antivirus) — voir [DISTRIBUTION.md](DISTRIBUTION.md).
 - [x] Installeur Inno Setup — script fourni ([`installer/argosnet.iss`](installer/argosnet.iss)),
       génère un `setup.exe` (raccourcis, désinstalleur, icône).
-- [ ] Signature de code (certificat OV/EV) — nécessite un certificat Authenticode
-      (à la charge du diffuseur) ; procédure documentée dans [DISTRIBUTION.md](DISTRIBUTION.md) §3.
 - [ ] Release GitHub avec le ZIP téléchargeable.
 - [x] Icône d'application — œil « Argos » (`argosnet/resources/argosnet.ico`,
       multi-tailles), câblée dans la fenêtre, le tray et le packaging. Régénérable
