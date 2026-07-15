@@ -89,12 +89,21 @@ class AlertsView(QWidget):
             self.jump_to_packet.emit(int(item.text()))
 
     def _trim(self) -> None:
-        """Borne l'affichage : retire les alertes les plus anciennes au-delà du plafond."""
+        """Borne l'affichage : retire les alertes les plus anciennes au-delà du plafond.
+
+        Les compteurs sont décrémentés en conséquence pour que le résumé, le badge
+        d'onglet et l'export CSV restent cohérents avec ce qui est réellement conservé
+        (l'historique complet demeure en base SQLite).
+        """
         overflow = len(self._alerts) - MAX_DISPLAY_ALERTS
-        if overflow > 0:
-            del self._alerts[:overflow]
-            for _ in range(overflow):  # les plus anciennes sont en bas de la table
-                self._table.removeRow(self._table.rowCount() - 1)
+        if overflow <= 0:
+            return
+        removed = self._alerts[:overflow]
+        self._critical -= sum(1 for a in removed if a.severity == Severity.CRITICAL)
+        self._total -= overflow
+        del self._alerts[:overflow]
+        for _ in range(overflow):  # les plus anciennes sont en bas de la table
+            self._table.removeRow(self._table.rowCount() - 1)
 
     def reset(self) -> None:
         self._table.setRowCount(0)

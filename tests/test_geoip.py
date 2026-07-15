@@ -38,3 +38,11 @@ def test_lookup_without_data_is_empty():
 def test_ipv6_classification():
     assert classify_ip("::1") == "loopback"
     assert classify_ip("2001:4860:4860::8888") == "public"
+
+
+def test_close_readers_is_safe_and_idempotent():
+    from argosnet.core.geoip import close_readers
+
+    # Sans base MaxMind ouverte, fermer ne doit rien lever, même appelé deux fois.
+    close_readers()
+    close_readers()

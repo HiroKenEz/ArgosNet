@@ -80,6 +80,20 @@ def geo_available() -> bool:
     return country is not None or asn is not None
 
 
+def close_readers() -> None:
+    """Ferme les bases MaxMind ouvertes (à appeler à la fermeture de l'application)."""
+    global _country_reader, _asn_reader, _tried
+    for reader in (_country_reader, _asn_reader):
+        if reader is not None:
+            try:
+                reader.close()
+            except Exception:
+                pass
+    _country_reader = None
+    _asn_reader = None
+    _tried = False
+
+
 def lookup(ip: str) -> str:
     """Pays/ASN best-effort d'une IP publique, ou '' si indisponible."""
     if not is_external(ip):

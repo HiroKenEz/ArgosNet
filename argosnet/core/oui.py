@@ -17,12 +17,20 @@ def lookup_vendor(mac: str) -> str:
         return ""
     try:
         from mac_vendor_lookup import MacLookup
+    except Exception:
+        _unavailable = True  # bibliothèque non installée : inutile de retenter
+        return ""
+    try:
         if _lookup is None:
             _lookup = MacLookup()
         return _lookup.lookup(mac)
+    except FileNotFoundError:
+        # Base OUI absente (jamais téléchargée) : on désactive pour ne pas retenter
+        # un chargement voué à l'échec à chaque hôte scanné.
+        _unavailable = True
+        return ""
     except Exception:
-        # Base absente (jamais mise à jour) ou MAC invalide : on abandonne
-        # silencieusement pour ne pas ralentir les scans suivants.
+        # MAC simplement absente de la base : miss normal, on garde la base active.
         return ""
 
 

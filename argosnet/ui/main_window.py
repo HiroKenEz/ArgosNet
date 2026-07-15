@@ -211,9 +211,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(tr("Appareils connus oubliés."), 4000)
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        from argosnet.core.geoip import close_readers
+
         self.capture_view.stop_capture_if_running()
         self._db.flush()
         self._db.close()
+        close_readers()
         if self._tray is not None:
             self._tray.hide()
         super().closeEvent(event)

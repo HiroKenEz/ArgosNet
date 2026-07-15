@@ -15,6 +15,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from argosnet.core.geoip import is_external
 from argosnet.core.stats import StatsEngine
 
 REFRESH_MS = 1500
@@ -26,17 +27,12 @@ EXTERNAL_COLOR = "#e0973b"  # hôtes externes
 
 
 def is_local(ip: str) -> bool:
-    if ip.startswith(("192.168.", "10.", "169.254.", "127.")):
-        return True
-    if ip.startswith("172."):
-        try:
-            second = int(ip.split(".")[1])
-            return 16 <= second <= 31
-        except (IndexError, ValueError):
-            return False
-    if ":" in ip:  # IPv6 lien-local / unique-local
-        return ip.lower().startswith(("fe80", "fc", "fd", "::1"))
-    return False
+    """Hôte non public (réseau local, CGN, réservé…).
+
+    Délègue à ``core/geoip`` pour une classification unique et complète dans toute
+    l'application (évite une seconde définition divergente).
+    """
+    return not is_external(ip)
 
 
 class NetworkMapView(QWidget):
