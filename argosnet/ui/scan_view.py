@@ -5,8 +5,9 @@ d'erreur clair est affiché plutôt que de planter.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -14,12 +15,14 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from argosnet.core.i18n import tr
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.core.scanner import (
     HostDiscoveryThread,
@@ -29,6 +32,7 @@ from argosnet.core.scanner import (
 )
 
 COLUMNS = ["IP", "MAC", "Constructeur", "Nom d'hôte", "Ports ouverts"]
+SCHEDULE_DEFAULT_MIN = 10   # intervalle par défaut du scan périodique (minutes)
 
 
 class ScanView(QWidget):
@@ -41,6 +45,8 @@ class ScanView(QWidget):
         self._row_by_ip: dict[str, int] = {}
         self._discovery: HostDiscoveryThread | None = None
         self._portscan: PortScanThread | None = None
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.timeout.connect(self._periodic_scan)
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -48,7 +54,7 @@ class ScanView(QWidget):
         root = QVBoxLayout(self)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("Interface :"))
+        bar.addWidget(QLabel(tr("Interface :")))
         self._iface_combo = QComboBox()
         self._iface_combo.setMinimumWidth(300)
         for iface in self._interfaces:
@@ -57,26 +63,43 @@ class ScanView(QWidget):
         self._iface_combo.currentIndexChanged.connect(self._sync_target)
         bar.addWidget(self._iface_combo)
 
-        bar.addWidget(QLabel("Cible :"))
+        bar.addWidget(QLabel(tr("Cible :")))
         self._target_edit = QLineEdit()
         self._target_edit.setPlaceholderText("ex. 192.168.1.0/24")
         bar.addWidget(self._target_edit, 1)
 
-        self._discover_btn = QPushButton("Découvrir les hôtes")
+        self._discover_btn = QPushButton(tr("Découvrir les hôtes"))
         self._discover_btn.clicked.connect(self._start_discovery)
         bar.addWidget(self._discover_btn)
 
-        self._portscan_btn = QPushButton("Scanner les ports de l'hôte sélectionné")
+        self._portscan_btn = QPushButton(tr("Scanner les ports de l'hôte sélectionné"))
         self._portscan_btn.clicked.connect(self._start_portscan)
         bar.addWidget(self._portscan_btn)
         root.addLayout(bar)
 
-        self._status = QLabel("Prêt.")
+        # Barre de planification : relance périodique de la découverte d'hôtes.
+        sched_bar = QHBoxLayout()
+        self._schedule_check = QCheckBox(tr("Scan périodique"))
+        self._schedule_check.setToolTip(
+            tr("Relance automatiquement la découverte d'hôtes à intervalle régulier.")
+        )
+        self._schedule_check.toggled.connect(self._toggle_schedule)
+        sched_bar.addWidget(self._schedule_check)
+        self._interval_spin = QSpinBox()
+        self._interval_spin.setRange(1, 1440)
+        self._interval_spin.setValue(SCHEDULE_DEFAULT_MIN)
+        self._interval_spin.valueChanged.connect(self._interval_changed)
+        sched_bar.addWidget(self._interval_spin)
+        sched_bar.addWidget(QLabel(tr("min")))
+        sched_bar.addStretch(1)
+        root.addLayout(sched_bar)
+
+        self._status = QLabel(tr("Prêt."))
         self._status.setStyleSheet("color: gray;")
         root.addWidget(self._status)
 
         self._table = QTableWidget(0, len(COLUMNS))
-        self._table.setHorizontalHeaderLabels(COLUMNS)
+        self._table.setHorizontalHeaderLabels([tr(c) for c in COLUMNS])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -132,6 +155,32 @@ class ScanView(QWidget):
     def _discovery_done(self, count: int) -> None:
         self._discover_btn.setEnabled(True)
         self._status.setText(f"Découverte terminée : {count} hôte(s) trouvé(s).")
+
+    # --------------------------------------------------------- planification
+    def _toggle_schedule(self, enabled: bool) -> None:
+        if enabled:
+            self._schedule_timer.start(self._interval_spin.value() * 60_000)
+            self._status.setText(
+                tr("Planifié : scan toutes les {minutes} min.").format(
+                    minutes=self._interval_spin.value()
+                )
+            )
+            self._periodic_scan()  # premier scan immédiat
+        else:
+            self._schedule_timer.stop()
+
+    def _interval_changed(self, minutes: int) -> None:
+        if self._schedule_timer.isActive():
+            self._schedule_timer.start(minutes * 60_000)
+
+    def _periodic_scan(self) -> None:
+        # Ne lance pas de nouveau balayage si l'un est déjà en cours (anti-chevauchement).
+        if self._discovery is not None and self._discovery.isRunning():
+            return
+        # Cible absente : on saute ce tour sans ouvrir de dialogue modal.
+        if not self._target_edit.text().strip():
+            return
+        self._start_discovery()
 
     # --------------------------------------------------------- scan de ports
     def _start_portscan(self) -> None:

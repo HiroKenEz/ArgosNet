@@ -76,6 +76,21 @@ _EN: dict[str, str] = {
     "Rechercher :": "Search:",
     "Précédent": "Previous",
     "Suivant": "Next",
+    # Onglet Scan
+    "Cible :": "Target:",
+    "Découvrir les hôtes": "Discover hosts",
+    "Scanner les ports de l'hôte sélectionné": "Scan ports of selected host",
+    "Prêt.": "Ready.",
+    "Scan périodique": "Periodic scan",
+    "min": "min",
+    "IP": "IP",
+    "MAC": "MAC",
+    "Constructeur": "Vendor",
+    "Nom d'hôte": "Hostname",
+    "Ports ouverts": "Open ports",
+    "Planifié : scan toutes les {minutes} min.": "Scheduled: scan every {minutes} min.",
+    "Relance automatiquement la découverte d'hôtes à intervalle régulier.":
+        "Automatically re-runs host discovery at a regular interval.",
 }
 
 _CATALOG: dict[str, dict[str, str]] = {"en": _EN}
