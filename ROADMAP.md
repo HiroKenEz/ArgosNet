@@ -84,7 +84,10 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
 
 ## 🚀 Distribution
 - [x] Build Nuitka (réduit les faux positifs antivirus) — voir [DISTRIBUTION.md](DISTRIBUTION.md).
-- [ ] Installeur Inno Setup + signature de code (certificat OV/EV).
+- [x] Installeur Inno Setup — script fourni ([`installer/argosnet.iss`](installer/argosnet.iss)),
+      génère un `setup.exe` (raccourcis, désinstalleur, icône).
+- [ ] Signature de code (certificat OV/EV) — nécessite un certificat Authenticode
+      (à la charge du diffuseur) ; procédure documentée dans [DISTRIBUTION.md](DISTRIBUTION.md) §3.
 - [ ] Release GitHub avec le ZIP téléchargeable.
 - [x] Icône d'application — œil « Argos » (`argosnet/resources/argosnet.ico`,
       multi-tailles), câblée dans la fenêtre, le tray et le packaging. Régénérable

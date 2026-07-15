@@ -92,9 +92,23 @@ signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 ArgosNe
 
 ## 4. Empaqueter proprement (Inno Setup)
 
-Un **installeur signé** est mieux perçu qu'un exe nu et permet de présenter le projet.
+Un **installeur** est mieux perçu qu'un exe nu et permet de présenter le projet.
 [Inno Setup](https://jrsoftware.org/isinfo.php) (gratuit) génère un `setup.exe` à partir
-d'un script `.iss`. Signez aussi l'installeur.
+d'un script `.iss`. Le script est fourni : [`installer/argosnet.iss`](installer/argosnet.iss).
+
+Après avoir compilé l'application (§2) et renommé le binaire en `ArgosNet.exe` (de sorte
+que `build_nuitka\run.dist\ArgosNet.exe` existe) :
+
+```powershell
+# Compiler l'installeur (Inno Setup 6 installé)
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\argosnet.iss
+```
+
+Le résultat, `installer\Output\ArgosNet-Setup-0.1.0.exe`, installe l'application dans
+`Program Files`, crée les raccourcis (menu Démarrer + bureau optionnel) et un
+désinstalleur, avec l'icône de l'application. Il demande les privilèges administrateur
+(nécessaires à la capture/scan). Pensez à **signer aussi l'installeur** (§3) pour une
+diffusion large.
 
 ---
 
