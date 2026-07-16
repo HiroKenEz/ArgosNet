@@ -24,9 +24,9 @@ COLUMNS = ["Hôte A", "Hôte B", "Paquets", "Volume", "Zone"]
 
 
 class ConversationsView(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, stats: StatsEngine) -> None:
         super().__init__()
-        self._stats = StatsEngine()
+        self._stats = stats  # moteur partagé, alimenté par le worker d'analyse
         self._last_total = -1
         self._zone_cache: dict[str, str] = {}  # IP -> zone (évite de recalculer)
         self._build_ui()
@@ -53,12 +53,8 @@ class ConversationsView(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         root.addWidget(self._table)
 
-    # ------------------------------------------------------------- ingestion
-    def on_packets(self, packets: list) -> None:
-        self._stats.add_packets(packets)
-
     def reset(self) -> None:
-        self._stats.reset()
+        """Vide l'affichage — les statistiques partagées sont remises à zéro en amont."""
         self._last_total = -1
         self._zone_cache.clear()
         self._table.setRowCount(0)

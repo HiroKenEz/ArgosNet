@@ -17,11 +17,20 @@ class DetectionEngine:
         self.detectors: list[Detector] = detectors if detectors is not None else default_detectors()
         self._counter = 0
 
-    def feed(self, packets) -> list[Alert]:
-        """Analyse un lot de paquets et renvoie les alertes déclenchées."""
+    def feed(self, packets, start_number: int | None = None) -> list[Alert]:
+        """Analyse un lot de paquets et renvoie les alertes déclenchées.
+
+        ``start_number`` fixe explicitement le numéro du premier paquet du lot (les
+        suivants s'incrémentent). L'appelant garde ainsi la numérotation alignée sur
+        la liste de capture même si l'analyse tourne dans un autre thread. Sans lui,
+        le moteur utilise son propre compteur séquentiel.
+        """
         alerts: list[Alert] = []
-        for pkt in packets:
-            self._counter += 1
+        for index, pkt in enumerate(packets):
+            if start_number is None:
+                self._counter += 1
+            else:
+                self._counter = start_number + index
             for detector in self.detectors:
                 try:
                     alerts.extend(detector.inspect(self._counter, pkt))

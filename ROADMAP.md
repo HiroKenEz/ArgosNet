@@ -22,6 +22,14 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       restant en base SQLite. *(alerts_view.py)*
 - [x] Docstring obsolète + constante `HOSTSWEEP_WINDOW` dédiée.
 
+### Architecture — fait ✅
+- [x] **Analyse hors du thread graphique** : `core/analysis.py` (`AnalysisWorker`)
+      consomme les lots de paquets dans son propre thread (statistiques + détection) ;
+      seules les alertes remontent à la GUI par signal. Le `StatsEngine` est devenu
+      **thread-safe** (verrou réentrant) et est désormais **partagé** par le dashboard,
+      la carte et les conversations — qui en instanciaient chacun un, soit 3× le même
+      travail. Numérotation des alertes alignée via un numéro de lot explicite.
+
 ### Restant (mineur) — fait ✅
 - [x] `list_interfaces()` mis en cache (copie défensive par appel).
 - [x] Commits SQLite regroupés (insertion sans commit + `flush()` périodique 3 s + à la fermeture).

@@ -136,8 +136,10 @@ class PacketFilterProxy(QSortFilterProxyModel):
 class CaptureView(QWidget):
     """Widget principal de capture/analyse de paquets."""
 
-    # Diffuse les nouveaux paquets bruts aux autres moteurs (stats, détection).
-    packets_added = Signal(list)
+    # Diffuse les nouveaux paquets bruts au worker d'analyse (stats, détection) :
+    # (numéro du premier paquet du lot, paquets). Le numéro permet à l'analyse de
+    # rester alignée sur la liste même en tournant dans un autre thread.
+    packets_added = Signal(int, list)
     # Émis quand la liste est vidée (réinitialisation des moteurs dérivés).
     cleared = Signal()
 
@@ -342,7 +344,7 @@ class CaptureView(QWidget):
         records = [make_record(base + i, pkt) for i, pkt in enumerate(packets)]
         self._model.append_records(records)
         self._update_count()
-        self.packets_added.emit(packets)
+        self.packets_added.emit(base, packets)
 
     # ---------------------------------------------------------- import/export
     def open_pcap_dialog(self) -> None:
@@ -376,7 +378,7 @@ class CaptureView(QWidget):
         self._model.append_records(records)
         self._update_count()
         if records:
-            self.packets_added.emit([r.packet for r in records])
+            self.packets_added.emit(records[0].number, [r.packet for r in records])
 
     def _on_pcap_failed(self, message: str) -> None:
         if hasattr(self, "_progress"):

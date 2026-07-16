@@ -37,9 +37,9 @@ def is_local(ip: str) -> bool:
 
 
 class NetworkMapView(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, stats: StatsEngine) -> None:
         super().__init__()
-        self._stats = StatsEngine()
+        self._stats = stats  # moteur partagé, alimenté par le worker d'analyse
         self._last_total = -1
 
         pg.setConfigOptions(antialias=True, background=None, foreground="#888")
@@ -78,12 +78,8 @@ class NetworkMapView(QWidget):
         label.setStyleSheet(f"color: {color};")
         return label
 
-    # ------------------------------------------------------------- ingestion
-    def on_packets(self, packets: list) -> None:
-        self._stats.add_packets(packets)
-
     def reset(self) -> None:
-        self._stats.reset()
+        """Vide l'affichage — les statistiques partagées sont remises à zéro en amont."""
         self._last_total = -1
         self._clear_graph()
         self._info.setText(tr("En attente de trafic…"))

@@ -24,10 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from argosnet import __app_name__, __version__
+from argosnet.core.analysis import AnalysisWorker
 from argosnet.core.i18n import tr
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.core.detection.detectors import NewDeviceDetector
 from argosnet.core.detection.engine import DetectionEngine
+from argosnet.core.stats import StatsEngine
 from argosnet.core.storage import Database
 from argosnet.ui.alerts_view import AlertsView
 from argosnet.ui.capture_view import CaptureView
@@ -62,28 +64,30 @@ class MainWindow(QMainWindow):
 
         self._db = Database(db_path)
 
+        # Statistiques et détection partagées, alimentées par un worker dédié : le
+        # thread graphique ne fait plus que lire les agrégats et afficher les alertes.
+        self._stats = StatsEngine()
+        self._detection = DetectionEngine()
+
         self.capture_view = CaptureView()
         self.scan_view = ScanView()
-        self.dashboard_view = DashboardView()
-        self.network_map_view = NetworkMapView()
-        self.conversations_view = ConversationsView()
+        self.dashboard_view = DashboardView(self._stats)
+        self.network_map_view = NetworkMapView(self._stats)
+        self.conversations_view = ConversationsView(self._stats)
         self.devices_view = DevicesView(self._db)
         self.alerts_view = AlertsView()
-        self._detection = DetectionEngine()
 
         # Les appareils déjà connus (base) ne redéclenchent pas d'alerte « nouvel appareil ».
         self._seed_known_devices()
 
-        # Le flux de paquets alimente dashboard, carte réseau et moteur de détection ;
-        # l'effacement réinitialise dashboard et carte (l'historique persiste en base).
-        self.capture_view.packets_added.connect(self.dashboard_view.on_packets)
-        self.capture_view.packets_added.connect(self.network_map_view.on_packets)
-        self.capture_view.packets_added.connect(self.conversations_view.on_packets)
-        self.capture_view.packets_added.connect(self._run_detection)
-        self.capture_view.cleared.connect(self.dashboard_view.reset)
-        self.capture_view.cleared.connect(self.network_map_view.reset)
-        self.capture_view.cleared.connect(self.conversations_view.reset)
-        self.capture_view.cleared.connect(self._reset_detection)
+        self._worker = AnalysisWorker(self._stats, self._detection)
+        self._worker.alerts_ready.connect(self._on_alerts)
+        self._worker.start()
+
+        # Le flux de paquets part vers le worker d'analyse ; l'effacement remet à zéro
+        # statistiques et détecteurs (l'historique des alertes persiste en base).
+        self.capture_view.packets_added.connect(self._worker.submit)
+        self.capture_view.cleared.connect(self._on_cleared)
         self.scan_view.device_found.connect(self._db.record_device)
         self.scan_view.device_found.connect(lambda *a: self.devices_view.refresh())
         self.alerts_view.counts_changed.connect(self._update_alert_tab)
@@ -214,6 +218,7 @@ class MainWindow(QMainWindow):
         from argosnet.core.geoip import close_readers
 
         self.capture_view.stop_capture_if_running()
+        self._worker.stop()  # arrête le thread d'analyse avant de fermer la base
         self._db.flush()
         self._db.close()
         close_readers()
@@ -255,7 +260,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        stats = self.dashboard_view._stats
+        stats = self._stats
         report = build_html_report(
             summary=stats.summary(),
             top_talkers=stats.top_talkers(20),
@@ -304,7 +309,7 @@ class MainWindow(QMainWindow):
     def _show_summary(self) -> None:
         from argosnet.ui.dashboard_view import format_bytes
 
-        s = self.dashboard_view._stats.summary()
+        s = self._stats.summary()
         title = tr("Résumé de la capture")
         if s["total_packets"] == 0:
             QMessageBox.information(self, title, tr("Aucun paquet capturé."))
@@ -338,8 +343,8 @@ class MainWindow(QMainWindow):
         self.capture_view.open_pcap_dialog()
 
     # ---------------------------------------------------------------- détection
-    def _run_detection(self, packets: list) -> None:
-        alerts = self._detection.feed(packets)
+    def _on_alerts(self, alerts: list) -> None:
+        """Alertes remontées par le worker d'analyse (exécuté dans le thread GUI)."""
         if not alerts:
             return
         self.alerts_view.add_alerts(alerts)
@@ -376,8 +381,12 @@ class MainWindow(QMainWindow):
                 6000,
             )
 
-    def _reset_detection(self) -> None:
-        self._detection.reset()
+    def _on_cleared(self) -> None:
+        """Effacement de la capture : remet à zéro l'analyse puis les vues dérivées."""
+        self._worker.reset()  # statistiques + détecteurs (file d'attente vidée)
+        self.dashboard_view.reset()
+        self.network_map_view.reset()
+        self.conversations_view.reset()
         self.alerts_view.reset()
 
     def _update_alert_tab(self, total: int, critical: int) -> None:

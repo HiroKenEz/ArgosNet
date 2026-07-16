@@ -61,6 +61,17 @@ def test_packet_numbers_assigned():
     assert all(a.packet_number is not None for a in alerts)
 
 
+def test_feed_with_explicit_start_number():
+    # Le worker d'analyse fournit le numéro du 1er paquet du lot : la numérotation
+    # des alertes reste alignée sur la liste de capture, hors du thread graphique.
+    packets = build_attack_packets()
+    alerts = DetectionEngine().feed(packets, start_number=1000)
+    nums = [a.packet_number for a in alerts if a.packet_number is not None]
+    assert nums
+    assert min(nums) >= 1000
+    assert max(nums) < 1000 + len(packets)
+
+
 def test_dns_tunnel_detected():
     label = os.urandom(24).hex()  # 48 caractères hexadécimaux, haute entropie
     pkt = (

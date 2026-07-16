@@ -3,9 +3,14 @@
 Découplé de l'interface : le dashboard vient lire les agrégats et rafraîchit ses
 graphes via un ``QTimer``. Le débit est binné à la seconde (horodatage du paquet)
 pour tracer une courbe temporelle aussi bien en direct que sur un .pcap chargé.
+
+**Thread-safe** : l'alimentation se fait depuis le thread d'analyse tandis que
+l'interface lit les agrégats depuis le thread graphique. Un verrou réentrant protège
+donc aussi bien les écritures que les lectures (qui itèrent sur les compteurs).
 """
 from __future__ import annotations
 
+import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
@@ -37,9 +42,20 @@ class StatsEngine:
         self.per_second_proto: dict[int, dict] = defaultdict(lambda: defaultdict(int))
         self._t0: float | None = None
         self._max_bucket: int = 0
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------- ingestion
     def add_packet(self, packet) -> None:
+        with self._lock:
+            self._add_packet(packet)
+
+    def add_packets(self, packets) -> None:
+        with self._lock:
+            for packet in packets:
+                self._add_packet(packet)
+
+    def _add_packet(self, packet) -> None:
+        """Corps de l'ingestion — appelé verrou déjà tenu."""
         length = packet_length(packet)
         self.total_packets += 1
         self.total_bytes += length
@@ -76,69 +92,89 @@ class StatsEngine:
                     self.per_second_bytes.pop(old, None)
                     self.per_second_proto.pop(old, None)
 
-    def add_packets(self, packets) -> None:
-        for packet in packets:
-            self.add_packet(packet)
-
     def reset(self) -> None:
-        self.__init__()
+        """Remet tous les compteurs à zéro (sans recréer le verrou)."""
+        with self._lock:
+            self.total_packets = 0
+            self.total_bytes = 0
+            self.proto_counts.clear()
+            self.talker_packets.clear()
+            self.talker_bytes.clear()
+            self.conv_packets.clear()
+            self.conv_bytes.clear()
+            self.per_second_packets.clear()
+            self.per_second_bytes.clear()
+            self.per_second_proto.clear()
+            self._t0 = None
+            self._max_bucket = 0
 
     # ------------------------------------------------------------- lectures
     def protocol_breakdown(self) -> list[tuple[str, int]]:
-        return self.proto_counts.most_common()
+        with self._lock:
+            return self.proto_counts.most_common()
+
+    def distinct_protocols(self) -> int:
+        with self._lock:
+            return len(self.proto_counts)
 
     def top_talkers(self, limit: int = 10) -> list[Talker]:
-        return [
-            Talker(addr, self.talker_packets[addr], byte_count)
-            for addr, byte_count in self.talker_bytes.most_common(limit)
-        ]
+        with self._lock:
+            return [
+                Talker(addr, self.talker_packets[addr], byte_count)
+                for addr, byte_count in self.talker_bytes.most_common(limit)
+            ]
 
     def top_conversations(self, limit: int = 10) -> list[tuple[str, str, int, int]]:
-        return [
-            (a, b, self.conv_packets[(a, b)], byte_count)
-            for (a, b), byte_count in self.conv_bytes.most_common(limit)
-        ]
+        with self._lock:
+            return [
+                (a, b, self.conv_packets[(a, b)], byte_count)
+                for (a, b), byte_count in self.conv_bytes.most_common(limit)
+            ]
 
     def duration(self) -> int:
         """Durée observée, en secondes (0 si aucune donnée)."""
-        return self._max_bucket + 1 if self._t0 is not None else 0
+        with self._lock:
+            return self._max_bucket + 1 if self._t0 is not None else 0
 
     def summary(self) -> dict:
         """Résumé synthétique de la capture (pour l'affichage « Résumé »)."""
-        dur = self.duration()
-        return {
-            "total_packets": self.total_packets,
-            "total_bytes": self.total_bytes,
-            "duration": dur,
-            "avg_pps": (self.total_packets / dur) if dur else 0.0,
-            "avg_bps": (self.total_bytes / dur) if dur else 0.0,
-            "protocols": self.protocol_breakdown(),
-            "distinct_talkers": len(self.talker_bytes),
-            "distinct_conversations": len(self.conv_bytes),
-        }
+        with self._lock:
+            dur = self.duration()
+            return {
+                "total_packets": self.total_packets,
+                "total_bytes": self.total_bytes,
+                "duration": dur,
+                "avg_pps": (self.total_packets / dur) if dur else 0.0,
+                "avg_bps": (self.total_bytes / dur) if dur else 0.0,
+                "protocols": self.protocol_breakdown(),
+                "distinct_talkers": len(self.talker_bytes),
+                "distinct_conversations": len(self.conv_bytes),
+            }
 
     def throughput_series(self) -> tuple[list[int], list[int], list[float]]:
         """Retourne (secondes, paquets/s, Ko/s) sur la fenêtre glissante conservée."""
-        if not self.per_second_packets:
-            return [], [], []
-        last = max(self.per_second_packets)
-        first = max(min(self.per_second_packets), last - THROUGHPUT_WINDOW + 1)
-        seconds = list(range(first, last + 1))
-        pps = [self.per_second_packets.get(s, 0) for s in seconds]
-        kbps = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
-        return seconds, pps, kbps
+        with self._lock:
+            if not self.per_second_packets:
+                return [], [], []
+            last = max(self.per_second_packets)
+            first = max(min(self.per_second_packets), last - THROUGHPUT_WINDOW + 1)
+            seconds = list(range(first, last + 1))
+            pps = [self.per_second_packets.get(s, 0) for s in seconds]
+            kbps = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
+            return seconds, pps, kbps
 
     def throughput_by_protocol(self, top_n: int = 5) -> tuple[list[int], dict[str, list[int]]]:
         """Retourne (secondes, {protocole: paquets/s}) pour les ``top_n`` protocoles."""
-        if not self.per_second_proto:
-            return [], {}
-        top_protocols = [name for name, _ in self.proto_counts.most_common(top_n)]
-        buckets = self.per_second_proto
-        last = max(buckets)
-        first = max(min(buckets), last - THROUGHPUT_WINDOW + 1)
-        seconds = list(range(first, last + 1))
-        series = {
-            proto: [buckets.get(s, {}).get(proto, 0) for s in seconds]
-            for proto in top_protocols
-        }
-        return seconds, series
+        with self._lock:
+            if not self.per_second_proto:
+                return [], {}
+            top_protocols = [name for name, _ in self.proto_counts.most_common(top_n)]
+            buckets = self.per_second_proto
+            last = max(buckets)
+            first = max(min(buckets), last - THROUGHPUT_WINDOW + 1)
+            seconds = list(range(first, last + 1))
+            series = {
+                proto: [buckets.get(s, {}).get(proto, 0) for s in seconds]
+                for proto in top_protocols
+            }
+            return seconds, series

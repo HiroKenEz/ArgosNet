@@ -109,9 +109,15 @@ Le menu **Historique** permet d'effacer les alertes ou d'oublier les appareils.
 ## Architecture
 
 Voir la structure du dépôt : le paquet `argosnet/` sépare le cœur (`core/`) de l'interface
-(`ui/`). La capture et les scans s'exécutent dans des threads de fond pour ne jamais geler
-la GUI ; le flux de paquets est distribué à la liste, au moteur de statistiques et au moteur
-de détection via le mécanisme signals/slots de Qt.
+(`ui/`). **Trois familles de threads de fond** évitent tout gel de l'interface :
+
+- la **capture** (Scapy `AsyncSniffer`) empile les paquets dans un tampon borné ;
+- l'**analyse** (`core/analysis.py`) consomme les lots dans son propre thread : statistiques
+  et détection y tournent, et seules les **alertes** remontent à la GUI par signal Qt ;
+- les **scans** réseau s'exécutent dans des `QThread` dédiés.
+
+Le thread graphique ne fait donc que dessiner : il lit les agrégats du `StatsEngine`
+partagé (thread-safe) via un `QTimer` et affiche les alertes reçues.
 
 ## Tests
 

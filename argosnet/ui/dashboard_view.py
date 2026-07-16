@@ -56,9 +56,9 @@ class StatTile(QFrame):
 
 
 class DashboardView(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, stats: StatsEngine) -> None:
         super().__init__()
-        self._stats = StatsEngine()
+        self._stats = stats  # moteur partagé, alimenté par le worker d'analyse
         self._last_total = -1
 
         # Fond transparent → suit le thème de la fenêtre ; gris moyen visible
@@ -125,12 +125,8 @@ class DashboardView(QWidget):
 
         root.addWidget(split, 3)
 
-    # ------------------------------------------------------------- ingestion
-    def on_packets(self, packets: list) -> None:
-        self._stats.add_packets(packets)
-
     def reset(self) -> None:
-        self._stats.reset()
+        """Vide l'affichage — les statistiques partagées sont remises à zéro en amont."""
         self._last_total = -1
         self._refresh(force=True)
 
@@ -143,7 +139,7 @@ class DashboardView(QWidget):
 
         self._tile_packets.set_value(f"{total:,}".replace(",", " "))
         self._tile_bytes.set_value(format_bytes(self._stats.total_bytes))
-        self._tile_protos.set_value(str(len(self._stats.proto_counts)))
+        self._tile_protos.set_value(str(self._stats.distinct_protocols()))
 
         seconds, pps, _kbps = self._stats.throughput_series()
         if seconds:

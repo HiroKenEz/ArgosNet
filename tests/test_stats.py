@@ -1,4 +1,6 @@
 """Tests du moteur de statistiques."""
+import threading
+
 from fixtures import build_sample_packets
 from scapy.layers.inet import IP, TCP
 from scapy.layers.l2 import Ether
@@ -66,6 +68,53 @@ def test_throughput_by_protocol_empty():
     seconds, series = StatsEngine().throughput_by_protocol()
     assert seconds == []
     assert series == {}
+
+
+def test_concurrent_add_and_read():
+    # Le worker d'analyse alimente le moteur pendant que la GUI lit les agrégats :
+    # les lectures itèrent sur les compteurs et doivent rester sûres sous verrou.
+    engine = StatsEngine()
+    packets = build_sample_packets()
+    rounds = 150
+    errors: list = []
+
+    def writer():
+        try:
+            for _ in range(rounds):
+                engine.add_packets(packets)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def reader():
+        try:
+            for _ in range(rounds):
+                engine.top_talkers(5)
+                engine.top_conversations(5)
+                engine.protocol_breakdown()
+                engine.distinct_protocols()
+                engine.throughput_series()
+                engine.throughput_by_protocol()
+                engine.summary()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors, errors
+    assert engine.total_packets == rounds * len(packets)
+
+
+def test_reset_keeps_engine_usable():
+    # reset() vide les compteurs sans recréer le verrou : le moteur reste utilisable.
+    engine = _engine()
+    engine.reset()
+    assert engine.total_packets == 0
+    engine.add_packets(build_sample_packets())
+    assert engine.total_packets == 9
 
 
 def test_throughput_window_bounds_series():
