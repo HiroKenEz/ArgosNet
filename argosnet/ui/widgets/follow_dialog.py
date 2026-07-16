@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from argosnet.core.i18n import tr
+
 CLIENT_COLOR = "#3b7dd8"   # a → b
 SERVER_COLOR = "#d9534f"   # b → a
 
@@ -19,14 +21,18 @@ SERVER_COLOR = "#d9534f"   # b → a
 class FollowStreamDialog(QDialog):
     def __init__(self, stream, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Suivre le flux TCP — {stream.endpoint_a} ↔ {stream.endpoint_b}")
+        self.setWindowTitle(
+            tr("Suivre le flux TCP — {a} ↔ {b}").format(
+                a=stream.endpoint_a, b=stream.endpoint_b
+            )
+        )
         self.resize(820, 600)
         layout = QVBoxLayout(self)
 
         legend = QLabel(
             f"<span style='color:{CLIENT_COLOR}'>■</span> {stream.endpoint_a} → {stream.endpoint_b}"
             f"    <span style='color:{SERVER_COLOR}'>■</span> {stream.endpoint_b} → {stream.endpoint_a}"
-            f"    ({stream.total_bytes()} octets)"
+            f"    ({stream.total_bytes()} {tr('octets')})"
         )
         layout.addWidget(legend)
 
@@ -43,9 +49,9 @@ class FollowStreamDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        copy_btn = QPushButton("Copier")
+        copy_btn = QPushButton(tr("Copier"))
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self._view.toPlainText()))
-        close_btn = QPushButton("Fermer")
+        close_btn = QPushButton(tr("Fermer"))
         close_btn.clicked.connect(self.accept)
         buttons.addWidget(copy_btn)
         buttons.addWidget(close_btn)

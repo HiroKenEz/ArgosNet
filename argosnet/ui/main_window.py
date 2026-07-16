@@ -305,24 +305,27 @@ class MainWindow(QMainWindow):
         from argosnet.ui.dashboard_view import format_bytes
 
         s = self.dashboard_view._stats.summary()
+        title = tr("Résumé de la capture")
         if s["total_packets"] == 0:
-            QMessageBox.information(self, "Résumé de la capture", "Aucun paquet capturé.")
+            QMessageBox.information(self, title, tr("Aucun paquet capturé."))
             return
         total = s["total_packets"]
-        lines = [
-            f"Paquets           : {total:,}".replace(",", " "),
-            f"Volume            : {format_bytes(s['total_bytes'])}",
-            f"Durée             : {s['duration']} s",
-            f"Débit moyen       : {s['avg_pps']:.1f} paquets/s  ({format_bytes(s['avg_bps'])}/s)",
-            f"Hôtes distincts   : {s['distinct_talkers']}",
-            f"Conversations     : {s['distinct_conversations']}",
-            "",
-            "Répartition par protocole :",
+        rows = [
+            (tr("Paquets"), f"{total:,}".replace(",", " ")),
+            (tr("Volume"), format_bytes(s["total_bytes"])),
+            (tr("Durée"), f"{s['duration']} s"),
+            (tr("Débit moyen"),
+             f"{s['avg_pps']:.1f} {tr('paquets/s')}  ({format_bytes(s['avg_bps'])}/s)"),
+            (tr("Hôtes distincts"), str(s["distinct_talkers"])),
+            (tr("Conversations"), str(s["distinct_conversations"])),
         ]
+        width = max(len(label) for label, _ in rows)
+        lines = [f"{label:<{width}} : {value}" for label, value in rows]
+        lines += ["", tr("Répartition par protocole :")]
         for name, count in s["protocols"]:
             pct = 100 * count / total if total else 0
             lines.append(f"    {name:<10} {count:>8}   ({pct:.1f} %)")
-        QMessageBox.information(self, "Résumé de la capture", "\n".join(lines))
+        QMessageBox.information(self, title, "\n".join(lines))
 
     def _toggle_theme(self, dark: bool) -> None:
         from PySide6.QtWidgets import QApplication
@@ -352,7 +355,8 @@ class MainWindow(QMainWindow):
         criticals = [a for a in alerts if a.severity.name == "CRITICAL"]
         if criticals:
             self.statusBar().showMessage(
-                f"⚠️ {len(criticals)} alerte(s) critique(s) détectée(s)", 5000
+                tr("⚠️ {count} alerte(s) critique(s) détectée(s)").format(count=len(criticals)),
+                5000,
             )
             self._notify_critical(criticals)
 
@@ -364,9 +368,9 @@ class MainWindow(QMainWindow):
             first = criticals[0]
             body = f"{first.category} — {first.source}"
             if len(criticals) > 1:
-                body += f"  (+{len(criticals) - 1} autre(s))"
+                body += tr("  (+{count} autre(s))").format(count=len(criticals) - 1)
             self._tray.showMessage(
-                "ArgosNet — alerte critique",
+                tr("ArgosNet — alerte critique"),
                 body,
                 QSystemTrayIcon.MessageIcon.Critical,
                 6000,
@@ -393,11 +397,11 @@ class MainWindow(QMainWindow):
     def _build_interfaces_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("Interfaces réseau détectées :"))
+        layout.addWidget(QLabel(tr("Interfaces réseau détectées :")))
 
         columns = ["Description", "Nom technique", "Adresse IP", "Adresse MAC", "Capture"]
         table = QTableWidget(len(self._interfaces), len(columns))
-        table.setHorizontalHeaderLabels(columns)
+        table.setHorizontalHeaderLabels([tr(c) for c in columns])
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 
@@ -406,7 +410,7 @@ class MainWindow(QMainWindow):
             table.setItem(row, 1, QTableWidgetItem(iface.name))
             table.setItem(row, 2, QTableWidgetItem(iface.ip or "—"))
             table.setItem(row, 3, QTableWidgetItem(iface.mac or "—"))
-            status = "✓ prête" if iface.capturable else "Npcap requis"
+            status = tr("✓ prête") if iface.capturable else tr("Npcap requis")
             table.setItem(row, 4, QTableWidgetItem(status))
 
         header = table.horizontalHeader()
@@ -415,16 +419,16 @@ class MainWindow(QMainWindow):
 
         if not self._interfaces:
             layout.addWidget(
-                QLabel(
+                QLabel(tr(
                     "Aucune interface détectée. Vérifiez que Npcap est installé "
                     "et que l'application est lancée en administrateur."
-                )
+                ))
             )
         elif not any(iface.capturable for iface in self._interfaces):
-            note = QLabel(
+            note = QLabel(tr(
                 "ℹ️ Interfaces listées via l'API Windows. Installez Npcap pour activer "
                 "la capture de paquets."
-            )
+            ))
             note.setStyleSheet("color: #b06a00;")
             layout.addWidget(note)
         return widget

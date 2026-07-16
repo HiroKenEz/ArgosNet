@@ -14,10 +14,12 @@ class Severity(IntEnum):
 
     @property
     def label(self) -> str:
+        from argosnet.core.i18n import tr
+
         return {
-            Severity.INFO: "Info",
-            Severity.WARNING: "Avertissement",
-            Severity.CRITICAL: "Critique",
+            Severity.INFO: tr("Info"),
+            Severity.WARNING: tr("Avertissement"),
+            Severity.CRITICAL: tr("Critique"),
         }[self]
 
     @property

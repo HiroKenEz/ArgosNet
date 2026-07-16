@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from argosnet.core.i18n import tr
 from argosnet.core.stats import StatsEngine
 
 REFRESH_MS = 1000
@@ -75,18 +76,18 @@ class DashboardView(QWidget):
         root = QVBoxLayout(self)
 
         tiles = QHBoxLayout()
-        self._tile_packets = StatTile("Paquets")
-        self._tile_bytes = StatTile("Volume total")
-        self._tile_rate = StatTile("Débit moyen")
-        self._tile_protos = StatTile("Protocoles")
+        self._tile_packets = StatTile(tr("Paquets"))
+        self._tile_bytes = StatTile(tr("Volume total"))
+        self._tile_rate = StatTile(tr("Débit moyen"))
+        self._tile_protos = StatTile(tr("Protocoles"))
         for tile in (self._tile_packets, self._tile_bytes, self._tile_rate, self._tile_protos):
             tiles.addWidget(tile)
         root.addLayout(tiles)
 
         # Courbe de débit (paquets/s).
-        self._tput_plot = pg.PlotWidget(title="Débit (paquets/s)")
-        self._tput_plot.setLabel("bottom", "temps", units="s")
-        self._tput_plot.setLabel("left", "paquets/s")
+        self._tput_plot = pg.PlotWidget(title=tr("Débit (paquets/s)"))
+        self._tput_plot.setLabel("bottom", tr("temps"), units="s")
+        self._tput_plot.setLabel("left", tr("paquets/s"))
         self._tput_plot.showGrid(x=True, y=True, alpha=0.2)
         self._tput_curve = self._tput_plot.plot(
             pen=pg.mkPen("#3b7dd8", width=2), fillLevel=0, brush=(59, 125, 216, 60)
@@ -94,9 +95,9 @@ class DashboardView(QWidget):
         root.addWidget(self._tput_plot, 2)
 
         # IO Graph : une courbe de débit par protocole (façon Wireshark).
-        self._io_plot = pg.PlotWidget(title="Débit par protocole (paquets/s)")
-        self._io_plot.setLabel("bottom", "temps", units="s")
-        self._io_plot.setLabel("left", "paquets/s")
+        self._io_plot = pg.PlotWidget(title=tr("Débit par protocole (paquets/s)"))
+        self._io_plot.setLabel("bottom", tr("temps"), units="s")
+        self._io_plot.setLabel("left", tr("paquets/s"))
         self._io_plot.showGrid(x=True, y=True, alpha=0.2)
         self._io_plot.addLegend(offset=(10, 10))
         self._io_curves: dict[str, pg.PlotDataItem] = {}
@@ -105,17 +106,17 @@ class DashboardView(QWidget):
         # Bas : répartition protocoles | top talkers.
         split = QSplitter(Qt.Orientation.Horizontal)
 
-        self._proto_plot = pg.PlotWidget(title="Répartition par protocole")
-        self._proto_plot.setLabel("left", "paquets")
+        self._proto_plot = pg.PlotWidget(title=tr("Répartition par protocole"))
+        self._proto_plot.setLabel("left", tr("paquets"))
         self._proto_plot.showGrid(y=True, alpha=0.2)
         self._proto_bar: pg.BarGraphItem | None = None
         split.addWidget(self._proto_plot)
 
         talkers_box = QWidget()
         tb_layout = QVBoxLayout(talkers_box)
-        tb_layout.addWidget(QLabel("Top talkers (par volume)"))
+        tb_layout.addWidget(QLabel(tr("Top talkers (par volume)")))
         self._talkers = QTableWidget(0, 3)
-        self._talkers.setHorizontalHeaderLabels(["Adresse", "Paquets", "Volume"])
+        self._talkers.setHorizontalHeaderLabels([tr("Adresse"), tr("Paquets"), tr("Volume")])
         self._talkers.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._talkers.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         tb_layout.addWidget(self._talkers)
@@ -148,7 +149,7 @@ class DashboardView(QWidget):
         if seconds:
             self._tput_curve.setData(seconds, pps)
             duration = max(1, seconds[-1] + 1)
-            self._tile_rate.set_value(f"{total / duration:.1f} p/s")
+            self._tile_rate.set_value(tr("{rate} p/s").format(rate=f"{total / duration:.1f}"))
         else:
             self._tput_curve.setData([], [])
             self._tile_rate.set_value("—")

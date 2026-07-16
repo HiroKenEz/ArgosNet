@@ -15,6 +15,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 
 from argosnet.core.dissect import PacketSummary, summarize
+from argosnet.core.i18n import tr
 
 COLUMNS = ["N°", "Temps", "Source", "Destination", "Protocole", "Long.", "Info"]
 
@@ -147,7 +148,7 @@ class PacketTableModel(QAbstractTableModel):
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            return COLUMNS[section]
+            return tr(COLUMNS[section])
         return None
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):

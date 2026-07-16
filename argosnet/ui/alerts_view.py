@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from argosnet.core.detection.alert import Alert, Severity
+from argosnet.core.i18n import tr
 
 COLUMNS = ["Heure", "Gravité", "Catégorie", "Source", "N° paquet", "Détail"]
 
@@ -49,24 +50,24 @@ class AlertsView(QWidget):
         root = QVBoxLayout(self)
 
         bar = QHBoxLayout()
-        self._summary = QLabel("Aucune alerte.")
+        self._summary = QLabel(tr("Aucune alerte."))
         self._summary.setStyleSheet("font-weight: bold;")
         bar.addWidget(self._summary)
         bar.addStretch(1)
-        export_btn = QPushButton("Exporter (CSV)…")
+        export_btn = QPushButton(tr("Exporter (CSV)…"))
         export_btn.clicked.connect(self.export_csv_dialog)
         bar.addWidget(export_btn)
-        clear_btn = QPushButton("Effacer les alertes")
+        clear_btn = QPushButton(tr("Effacer les alertes"))
         clear_btn.clicked.connect(self.reset)
         bar.addWidget(clear_btn)
         root.addLayout(bar)
 
         self._table = QTableWidget(0, len(COLUMNS))
-        self._table.setHorizontalHeaderLabels(COLUMNS)
+        self._table.setHorizontalHeaderLabels([tr(c) for c in COLUMNS])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setWordWrap(True)
-        self._table.setToolTip("Double-cliquez une alerte pour voir le paquet concerné.")
+        self._table.setToolTip(tr("Double-cliquez une alerte pour voir le paquet concerné."))
         self._table.cellDoubleClicked.connect(self._on_double_click)
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
@@ -114,10 +115,10 @@ class AlertsView(QWidget):
 
     def export_csv_dialog(self) -> None:
         if not self._alerts:
-            QMessageBox.information(self, "Rien à exporter", "Aucune alerte à exporter.")
+            QMessageBox.information(self, tr("Rien à exporter"), tr("Aucune alerte à exporter."))
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter les alertes", "alertes.csv", "CSV (*.csv)"
+            self, tr("Exporter les alertes"), "alertes.csv", "CSV (*.csv)"
         )
         if path:
             self.export_csv(path)
@@ -127,7 +128,10 @@ class AlertsView(QWidget):
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as handle:
                 writer = csv.writer(handle, delimiter=";")
-                writer.writerow(["Horodatage", "Gravité", "Catégorie", "Source", "N° paquet", "Détail"])
+                writer.writerow([
+                    tr("Horodatage"), tr("Gravité"), tr("Catégorie"),
+                    tr("Source"), tr("N° paquet"), tr("Détail"),
+                ])
                 for alert in self._alerts:
                     hhmmss = (
                         time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(alert.timestamp))
@@ -139,7 +143,10 @@ class AlertsView(QWidget):
                          alert.packet_number or "", alert.detail]
                     )
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Export impossible", f"Échec de l'écriture :\n{exc}")
+            QMessageBox.critical(
+                self, tr("Export impossible"),
+                tr("Échec de l'écriture :\n{error}").format(error=exc),
+            )
 
     # ------------------------------------------------------------- interne
     def _insert_alert(self, alert: Alert) -> None:
@@ -169,9 +176,11 @@ class AlertsView(QWidget):
 
     def _update_summary(self) -> None:
         if self._total == 0:
-            self._summary.setText("Aucune alerte.")
+            self._summary.setText(tr("Aucune alerte."))
         else:
             self._summary.setText(
-                f"{self._total} alerte(s) — dont {self._critical} critique(s)."
+                tr("{total} alerte(s) — dont {critical} critique(s).").format(
+                    total=self._total, critical=self._critical
+                )
             )
         self.counts_changed.emit(self._total, self._critical)

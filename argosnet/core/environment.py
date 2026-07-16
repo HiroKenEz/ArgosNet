@@ -39,16 +39,18 @@ def npcap_installed() -> bool:
 
 def environment_warnings() -> list[str]:
     """Retourne la liste des avertissements d'environnement à présenter à l'utilisateur."""
+    from argosnet.core.i18n import tr
+
     warnings: list[str] = []
     if not npcap_installed():
-        warnings.append(
+        warnings.append(tr(
             "Npcap ne semble pas installé : la capture de paquets sera indisponible.\n"
             "Installez-le depuis https://npcap.com en cochant "
             "« Install Npcap in WinPcap API-compatible Mode »."
-        )
+        ))
     if not is_admin():
-        warnings.append(
+        warnings.append(tr(
             "L'application n'est pas lancée en administrateur.\n"
             "La capture brute et le scan de ports nécessitent des privilèges élevés."
-        )
+        ))
     return warnings

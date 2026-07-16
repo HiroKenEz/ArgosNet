@@ -41,7 +41,7 @@ def main() -> int:
 
     from argosnet import __app_name__
     from argosnet.core.environment import environment_warnings
-    from argosnet.core.i18n import load_language
+    from argosnet.core.i18n import load_language, tr
     from argosnet.core.resources import app_icon_path
     from argosnet.ui.main_window import MainWindow
     from argosnet.ui.theme import apply_theme
@@ -61,7 +61,7 @@ def main() -> int:
     if warnings:
         QMessageBox.warning(
             window,
-            f"{__app_name__} — vérification de l'environnement",
+            f"{__app_name__} — {tr(\"vérification de l'environnement\")}",
             "\n\n".join(warnings),
         )
 

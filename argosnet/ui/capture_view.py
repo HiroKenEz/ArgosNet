@@ -181,9 +181,11 @@ class CaptureView(QWidget):
         bar1.addWidget(self._bpf_edit, 1)
         self._ring_check = QCheckBox(tr("Anneau"))
         self._ring_check.setToolTip(
-            "Capture en anneau : écrit le trafic dans des fichiers .pcap rotatifs\n"
-            f"({RING_MAX_FILES} fichiers × {RING_MAX_PACKETS:,} paquets max) sous\n"
-            f"{RING_DIR}\nIdéal pour une surveillance continue sans saturer le disque."
+            tr(
+                "Capture en anneau : écrit le trafic dans des fichiers .pcap rotatifs\n"
+                "({files} fichiers × {packets} paquets max) sous\n{dir}\n"
+                "Idéal pour une surveillance continue sans saturer le disque."
+            ).format(files=RING_MAX_FILES, packets=f"{RING_MAX_PACKETS:,}", dir=RING_DIR)
         )
         bar1.addWidget(self._ring_check)
         self._start_btn = QPushButton(tr("▶ Démarrer"))
@@ -209,13 +211,13 @@ class CaptureView(QWidget):
         bar2.addWidget(self._filter_edit, 1)
         self._fav_btn = QToolButton()
         self._fav_btn.setText("★")
-        self._fav_btn.setToolTip("Filtres favoris et récents")
+        self._fav_btn.setToolTip(tr("Filtres favoris et récents"))
         self._fav_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         fav_menu = QMenu(self._fav_btn)
         fav_menu.aboutToShow.connect(self._build_favorites_menu)
         self._fav_btn.setMenu(fav_menu)
         bar2.addWidget(self._fav_btn)
-        self._count_label = QLabel("0 paquet")
+        self._count_label = QLabel(tr("{count} paquet(s)").format(count=0))
         bar2.addWidget(self._count_label)
         open_btn = QPushButton(tr("Ouvrir .pcap…"))
         open_btn.clicked.connect(self.open_pcap_dialog)
@@ -252,7 +254,7 @@ class CaptureView(QWidget):
 
         hsplit = QSplitter(Qt.Orientation.Horizontal)
         self._detail = QTreeWidget()
-        self._detail.setHeaderLabels(["Champ", "Valeur"])
+        self._detail.setHeaderLabels([tr("Champ"), tr("Valeur")])
         self._detail.setColumnWidth(0, 220)
         hsplit.addWidget(self._detail)
         self._hex = HexView()
@@ -293,8 +295,8 @@ class CaptureView(QWidget):
                 ring = RingWriter(RING_DIR, max_files=RING_MAX_FILES, max_packets=RING_MAX_PACKETS)
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.critical(
-                    self, "Capture en anneau impossible",
-                    f"Impossible de préparer le dossier d'anneau :\n{exc}",
+                    self, tr("Capture en anneau impossible"),
+                    tr("Impossible de préparer le dossier d'anneau :\n{error}").format(error=exc),
                 )
                 return
         try:
@@ -302,10 +304,12 @@ class CaptureView(QWidget):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
                 self,
-                "Capture impossible",
-                f"Impossible de démarrer la capture.\n\n{exc}\n\n"
-                "Vérifiez que Npcap est installé et que l'application est lancée "
-                "en administrateur.",
+                tr("Capture impossible"),
+                tr(
+                    "Impossible de démarrer la capture.\n\n{error}\n\n"
+                    "Vérifiez que Npcap est installé et que l'application est lancée "
+                    "en administrateur."
+                ).format(error=exc),
             )
             return
         self._timer.start()
@@ -343,7 +347,8 @@ class CaptureView(QWidget):
     # ---------------------------------------------------------- import/export
     def open_pcap_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Ouvrir une capture", "", "Captures (*.pcap *.pcapng *.cap);;Tous (*.*)"
+            self, tr("Ouvrir une capture"), "",
+            tr("Captures (*.pcap *.pcapng *.cap);;Tous (*.*)"),
         )
         if path:
             self.load_pcap(path)
@@ -351,14 +356,16 @@ class CaptureView(QWidget):
     def load_pcap(self, path: str) -> None:
         """Charge un fichier .pcap en arrière-plan, par lots (ne gèle pas la GUI)."""
         self._loader = PcapLoader(path, self._model.next_number())
-        self._progress = QProgressDialog("Lecture de la capture…", None, 0, 0, self)
-        self._progress.setWindowTitle("Chargement")
+        self._progress = QProgressDialog(tr("Lecture de la capture…"), None, 0, 0, self)
+        self._progress.setWindowTitle(tr("Chargement"))
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress.setCancelButton(None)
         self._progress.setMinimumDuration(0)
         self._loader.chunk.connect(self._on_pcap_chunk)
         self._loader.progress.connect(
-            lambda n: self._progress.setLabelText(f"Lecture de la capture…  {n} paquets")
+            lambda n: self._progress.setLabelText(
+                tr("Lecture de la capture…  {count} paquets").format(count=n)
+            )
         )
         self._loader.failed.connect(self._on_pcap_failed)
         self._loader.finished.connect(self._progress.close)
@@ -374,14 +381,19 @@ class CaptureView(QWidget):
     def _on_pcap_failed(self, message: str) -> None:
         if hasattr(self, "_progress"):
             self._progress.close()
-        QMessageBox.critical(self, "Lecture impossible", f"Fichier illisible :\n{message}")
+        QMessageBox.critical(
+            self, tr("Lecture impossible"),
+            tr("Fichier illisible :\n{message}").format(message=message),
+        )
 
     def save_pcap_dialog(self) -> None:
         if self._model.rowCount() == 0:
-            QMessageBox.information(self, "Rien à enregistrer", "Aucun paquet à exporter.")
+            QMessageBox.information(
+                self, tr("Rien à enregistrer"), tr("Aucun paquet à exporter.")
+            )
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Enregistrer la capture", "capture.pcap", "Captures (*.pcap)"
+            self, tr("Enregistrer la capture"), "capture.pcap", tr("Captures (*.pcap)")
         )
         if not path:
             return
@@ -389,7 +401,10 @@ class CaptureView(QWidget):
             from scapy.utils import wrpcap
             wrpcap(path, self._model.all_packets())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Écriture impossible", f"Échec de l'enregistrement :\n{exc}")
+            QMessageBox.critical(
+                self, tr("Écriture impossible"),
+                tr("Échec de l'enregistrement :\n{error}").format(error=exc),
+            )
 
     # -------------------------------------------------------------- filtre
     def _apply_filter(self) -> None:
@@ -408,10 +423,13 @@ class CaptureView(QWidget):
     def _update_count(self) -> None:
         total = self._model.rowCount()
         shown = self._proxy.rowCount()
-        text = f"{total} paquet(s)" if shown == total else f"{shown} / {total} paquet(s)"
+        if shown == total:
+            text = tr("{count} paquet(s)").format(count=total)
+        else:
+            text = tr("{shown} / {total} paquet(s)").format(shown=shown, total=total)
         dropped = self._controller.dropped_count()
         if dropped:
-            text += f"   ⚠ {dropped} perdu(s)"
+            text += tr("   ⚠ {count} perdu(s)").format(count=dropped)
         self._count_label.setText(text)
 
     # ------------------------------------------------------- sélection/détail
@@ -444,7 +462,7 @@ class CaptureView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(QLabel(tr("Rechercher :")))
         self._find_edit = QLineEdit()
-        self._find_edit.setPlaceholderText("texte dans source, destination, protocole ou info…")
+        self._find_edit.setPlaceholderText(tr("texte dans source, destination, protocole ou info…"))
         self._find_edit.returnPressed.connect(self._find_next)
         layout.addWidget(self._find_edit, 1)
         prev_btn = QPushButton(tr("Précédent"))
@@ -516,18 +534,21 @@ class CaptureView(QWidget):
         s = record.summary
         menu = QMenu(self)
         if s.src and s.src != "—":
-            menu.addAction(f"Filtrer la source  {s.src}", lambda: self._set_filter(f"ip.src=={s.src}"))
-            menu.addAction(f"Filtrer l'adresse  {s.src}", lambda: self._set_filter(f"ip.addr=={s.src}"))
+            menu.addAction(tr("Filtrer la source  {addr}").format(addr=s.src),
+                           lambda: self._set_filter(f"ip.src=={s.src}"))
+            menu.addAction(tr("Filtrer l'adresse  {addr}").format(addr=s.src),
+                           lambda: self._set_filter(f"ip.addr=={s.src}"))
         if s.dst and s.dst != "—":
-            menu.addAction(f"Filtrer la destination  {s.dst}", lambda: self._set_filter(f"ip.dst=={s.dst}"))
-        menu.addAction(f"Filtrer le protocole  {s.protocol}",
+            menu.addAction(tr("Filtrer la destination  {addr}").format(addr=s.dst),
+                           lambda: self._set_filter(f"ip.dst=={s.dst}"))
+        menu.addAction(tr("Filtrer le protocole  {proto}").format(proto=s.protocol),
                        lambda: self._set_filter(f"proto=={s.protocol.lower()}"))
         if _has_tcp(record.packet):
             menu.addSeparator()
-            menu.addAction("Suivre le flux TCP", lambda: self._follow_stream(record.packet))
+            menu.addAction(tr("Suivre le flux TCP"), lambda: self._follow_stream(record.packet))
         menu.addSeparator()
-        menu.addAction("Copier la ligne", lambda: self._copy_to_clipboard(self._row_text(record)))
-        menu.addAction("Copier l'info", lambda: self._copy_to_clipboard(s.info))
+        menu.addAction(tr("Copier la ligne"), lambda: self._copy_to_clipboard(self._row_text(record)))
+        menu.addAction(tr("Copier l'info"), lambda: self._copy_to_clipboard(s.info))
         menu.exec(self._table.viewport().mapToGlobal(pos))
 
     def _follow_stream(self, packet) -> None:
@@ -537,8 +558,8 @@ class CaptureView(QWidget):
         stream = follow_tcp_stream(self._model.all_packets(), packet)
         if stream is None or not stream.segments:
             QMessageBox.information(
-                self, "Suivre le flux",
-                "Aucune donnée applicative à réassembler pour ce flux TCP.",
+                self, tr("Suivre le flux"),
+                tr("Aucune donnée applicative à réassembler pour ce flux TCP."),
             )
             return
         FollowStreamDialog(stream, self).exec()
@@ -615,18 +636,18 @@ class CaptureView(QWidget):
     def _build_favorites_menu(self) -> None:
         menu = self._fav_btn.menu()
         menu.clear()
-        save = menu.addAction("★ Enregistrer le filtre actuel comme favori")
+        save = menu.addAction(tr("★ Enregistrer le filtre actuel comme favori"))
         save.setEnabled(bool(self._filter_edit.text().strip()))
         save.triggered.connect(self._save_current_favorite)
         if self._favorites:
             menu.addSeparator()
-            header = menu.addAction("Favoris")
+            header = menu.addAction(tr("Favoris"))
             header.setEnabled(False)
             for expr in self._favorites:
                 menu.addAction("  " + expr, lambda checked=False, e=expr: self._set_filter(e))
         if self._history:
             menu.addSeparator()
-            header = menu.addAction("Récents")
+            header = menu.addAction(tr("Récents"))
             header.setEnabled(False)
             for expr in self._history[:10]:
                 menu.addAction("  " + expr, lambda checked=False, e=expr: self._set_filter(e))

@@ -74,7 +74,8 @@ Audit du code + backlog de fonctionnalités. Les cases cochées sont **faites**.
       (fichiers rotatifs, quota configurable). *(capture.py)*
 - [x] **Multi-langue** (EN/FR) — infra i18n légère (`core/i18n.py`), langue
       persistée dans `~/.argosnet/config.json`, bascule dans **Affichage → Langue**
-      (chrome principale traduite ; appliquée au redémarrage).
+      (**interface entièrement traduite** : onglets, menus, dashboard, alertes,
+      appareils, carte, éditeurs, dialogues ; appliquée au redémarrage).
 - [x] **Planification de scans réseau** — case « Scan périodique » + intervalle
       (min) dans l'onglet Scan ; relance automatique de la découverte d'hôtes,
       sans chevauchement. *(scan_view.py)*

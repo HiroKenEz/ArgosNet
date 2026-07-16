@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from argosnet.core.i18n import tr
 from argosnet.ui.packet_model import (
     DEFAULT_PROTO_COLORS,
     PROTO_COLORS,
@@ -25,13 +26,13 @@ from argosnet.ui.packet_model import (
 class ColorEditorDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Couleurs des protocoles")
+        self.setWindowTitle(tr("Couleurs des protocoles"))
         self.resize(340, 480)
         self._pending = {proto: color.name() for proto, color in PROTO_COLORS.items()}
         self._buttons: dict[str, QPushButton] = {}
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Cliquez une couleur pour la modifier."))
+        layout.addWidget(QLabel(tr("Cliquez une couleur pour la modifier.")))
 
         grid = QGridLayout()
         for row, proto in enumerate(PROTO_COLORS):
@@ -49,13 +50,13 @@ class ColorEditorDialog(QDialog):
         layout.addWidget(scroll, 1)
 
         bar = QHBoxLayout()
-        reset_btn = QPushButton("Réinitialiser")
+        reset_btn = QPushButton(tr("Réinitialiser"))
         reset_btn.clicked.connect(self._reset)
         bar.addWidget(reset_btn)
         bar.addStretch(1)
-        ok_btn = QPushButton("OK")
+        ok_btn = QPushButton(tr("OK"))
         ok_btn.clicked.connect(self._accept)
-        cancel_btn = QPushButton("Annuler")
+        cancel_btn = QPushButton(tr("Annuler"))
         cancel_btn.clicked.connect(self.reject)
         bar.addWidget(ok_btn)
         bar.addWidget(cancel_btn)
@@ -67,7 +68,9 @@ class ColorEditorDialog(QDialog):
         button.setText(color.name())
 
     def _pick(self, proto: str) -> None:
-        color = QColorDialog.getColor(QColor(self._pending[proto]), self, f"Couleur — {proto}")
+        color = QColorDialog.getColor(
+            QColor(self._pending[proto]), self, tr("Couleur — {proto}").format(proto=proto)
+        )
         if color.isValid():
             self._pending[proto] = color.name()
             self._paint(self._buttons[proto], color)

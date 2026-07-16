@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from argosnet.core.geoip import is_external
+from argosnet.core.i18n import tr
 from argosnet.core.stats import StatsEngine
 
 REFRESH_MS = 1500
@@ -53,10 +54,10 @@ class NetworkMapView(QWidget):
         root = QVBoxLayout(self)
 
         legend = QHBoxLayout()
-        legend.addWidget(self._legend_dot(LOCAL_COLOR, "Hôte local"))
-        legend.addWidget(self._legend_dot(EXTERNAL_COLOR, "Hôte externe"))
+        legend.addWidget(self._legend_dot(LOCAL_COLOR, tr("Hôte local")))
+        legend.addWidget(self._legend_dot(EXTERNAL_COLOR, tr("Hôte externe")))
         legend.addStretch(1)
-        self._info = QLabel("En attente de trafic…")
+        self._info = QLabel(tr("En attente de trafic…"))
         self._info.setStyleSheet("color: gray;")
         legend.addWidget(self._info)
         root.addLayout(legend)
@@ -85,7 +86,7 @@ class NetworkMapView(QWidget):
         self._stats.reset()
         self._last_total = -1
         self._clear_graph()
-        self._info.setText("En attente de trafic…")
+        self._info.setText(tr("En attente de trafic…"))
 
     # -------------------------------------------------------------- rendu
     def _clear_graph(self) -> None:
@@ -143,4 +144,6 @@ class NetworkMapView(QWidget):
             self._plot.addItem(text)
             self._labels.append(text)
 
-        self._info.setText(f"{n} hôte(s), {len(adj)} lien(s) affichés")
+        self._info.setText(
+            tr("{nodes} hôte(s), {edges} lien(s) affichés").format(nodes=n, edges=len(adj))
+        )

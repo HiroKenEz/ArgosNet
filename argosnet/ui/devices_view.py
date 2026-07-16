@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from argosnet.core.i18n import tr
+
 COLUMNS = ["MAC", "IP", "Constructeur", "Nom d'hôte", "Libellé", "Vu le", "Dernier"]
 LABEL_COL = 4
 
@@ -40,20 +42,20 @@ class DevicesView(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         bar = QHBoxLayout()
-        self._info = QLabel("Appareils connus.")
+        self._info = QLabel(tr("Appareils connus."))
         self._info.setStyleSheet("font-weight: bold;")
         bar.addWidget(self._info)
         bar.addStretch(1)
-        hint = QLabel("Double-cliquez la colonne « Libellé » pour nommer un appareil.")
+        hint = QLabel(tr("Double-cliquez la colonne « Libellé » pour nommer un appareil."))
         hint.setStyleSheet("color: gray;")
         bar.addWidget(hint)
-        refresh_btn = QPushButton("Rafraîchir")
+        refresh_btn = QPushButton(tr("Rafraîchir"))
         refresh_btn.clicked.connect(self.refresh)
         bar.addWidget(refresh_btn)
         root.addLayout(bar)
 
         self._table = QTableWidget(0, len(COLUMNS))
-        self._table.setHorizontalHeaderLabels(COLUMNS)
+        self._table.setHorizontalHeaderLabels([tr(c) for c in COLUMNS])
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(
             QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed
@@ -80,7 +82,7 @@ class DevicesView(QWidget):
             self._table.setItem(row, 5, self._readonly(_fmt_time(dev.get("first_seen"))))
             self._table.setItem(row, 6, self._readonly(_fmt_time(dev.get("last_seen"))))
         self._building = False
-        self._info.setText(f"{len(devices)} appareil(s) connu(s)")
+        self._info.setText(tr("{count} appareil(s) connu(s)").format(count=len(devices)))
 
     # ------------------------------------------------------------- interne
     @staticmethod

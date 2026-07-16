@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from argosnet.core.i18n import tr
+
 COLUMNS = ["Nom", "Port dest.", "Contient", "Gravité", "Message"]
 SEVERITIES = ("info", "warning", "critical")
 
@@ -20,36 +22,36 @@ SEVERITIES = ("info", "warning", "critical")
 class RulesEditorDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Règles de détection (mini-IDS)")
+        self.setWindowTitle(tr("Règles de détection (mini-IDS)"))
         self.resize(780, 460)
         layout = QVBoxLayout(self)
 
-        info = QLabel(
+        info = QLabel(tr(
             "Chaque règle peut cibler un <b>port de destination</b> et/ou une "
             "<b>sous-chaîne</b> dans la charge utile. Gravité : info, warning ou critical. "
             "Enregistré dans <code>~/.argosnet/rules.yaml</code>."
-        )
+        ))
         info.setWordWrap(True)
         info.setStyleSheet("color: gray;")
         layout.addWidget(info)
 
         self._table = QTableWidget(0, len(COLUMNS))
-        self._table.setHorizontalHeaderLabels(COLUMNS)
+        self._table.setHorizontalHeaderLabels([tr(c) for c in COLUMNS])
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._table)
 
         bar = QHBoxLayout()
-        add_btn = QPushButton("Ajouter")
+        add_btn = QPushButton(tr("Ajouter"))
         add_btn.clicked.connect(lambda: self._append({"severity": "warning"}))
-        rem_btn = QPushButton("Supprimer la ligne")
+        rem_btn = QPushButton(tr("Supprimer la ligne"))
         rem_btn.clicked.connect(self._remove_row)
         bar.addWidget(add_btn)
         bar.addWidget(rem_btn)
         bar.addStretch(1)
-        save_btn = QPushButton("Enregistrer")
+        save_btn = QPushButton(tr("Enregistrer"))
         save_btn.clicked.connect(self._save)
-        cancel_btn = QPushButton("Annuler")
+        cancel_btn = QPushButton(tr("Annuler"))
         cancel_btn.clicked.connect(self.reject)
         bar.addWidget(save_btn)
         bar.addWidget(cancel_btn)
@@ -106,6 +108,6 @@ class RulesEditorDialog(QDialog):
         try:
             save_rules(self._collect())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Enregistrement impossible", str(exc))
+            QMessageBox.critical(self, tr("Enregistrement impossible"), str(exc))
             return
         self.accept()

@@ -129,12 +129,15 @@ class ScanView(QWidget):
     def _start_discovery(self) -> None:
         target = self._target_edit.text().strip()
         if not target:
-            QMessageBox.information(self, "Cible manquante", "Indiquez un sous-réseau (ex. 192.168.1.0/24).")
+            QMessageBox.information(
+                self, tr("Cible manquante"),
+                tr("Indiquez un sous-réseau (ex. 192.168.1.0/24)."),
+            )
             return
         self._table.setRowCount(0)
         self._row_by_ip.clear()
         self._discover_btn.setEnabled(False)
-        self._status.setText(f"Balayage ARP de {target}…")
+        self._status.setText(tr("Balayage ARP de {target}…").format(target=target))
 
         self._discovery = HostDiscoveryThread(target, self._selected_iface_arg())
         self._discovery.host_found.connect(self._add_host)
@@ -154,7 +157,9 @@ class ScanView(QWidget):
 
     def _discovery_done(self, count: int) -> None:
         self._discover_btn.setEnabled(True)
-        self._status.setText(f"Découverte terminée : {count} hôte(s) trouvé(s).")
+        self._status.setText(
+            tr("Découverte terminée : {count} hôte(s) trouvé(s).").format(count=count)
+        )
 
     # --------------------------------------------------------- planification
     def _toggle_schedule(self, enabled: bool) -> None:
@@ -186,11 +191,13 @@ class ScanView(QWidget):
     def _start_portscan(self) -> None:
         row = self._table.currentRow()
         if row < 0:
-            QMessageBox.information(self, "Aucun hôte", "Sélectionnez un hôte dans la liste.")
+            QMessageBox.information(
+                self, tr("Aucun hôte"), tr("Sélectionnez un hôte dans la liste.")
+            )
             return
         ip = self._table.item(row, 0).text()
         self._portscan_btn.setEnabled(False)
-        self._status.setText(f"Scan des ports de {ip}…")
+        self._status.setText(tr("Scan des ports de {ip}…").format(ip=ip))
 
         self._portscan = PortScanThread(ip, iface=self._selected_iface_arg())
         self._portscan.result.connect(self._portscan_done)
@@ -203,11 +210,15 @@ class ScanView(QWidget):
         if row is not None:
             text = ", ".join(map(str, open_ports)) if open_ports else "aucun"
             self._table.setItem(row, 4, QTableWidgetItem(text))
-        self._status.setText(f"Scan de {ip} terminé : {len(open_ports)} port(s) ouvert(s).")
+        self._status.setText(
+            tr("Scan de {ip} terminé : {count} port(s) ouvert(s).").format(
+                ip=ip, count=len(open_ports)
+            )
+        )
 
     # ------------------------------------------------------------- erreurs
     def _scan_error(self, message: str) -> None:
         self._discover_btn.setEnabled(True)
         self._portscan_btn.setEnabled(True)
-        self._status.setText("Échec du scan.")
-        QMessageBox.critical(self, "Scan impossible", message)
+        self._status.setText(tr("Échec du scan."))
+        QMessageBox.critical(self, tr("Scan impossible"), message)
