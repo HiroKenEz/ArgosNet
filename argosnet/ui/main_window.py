@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
             (tr("Volume"), format_bytes(s["total_bytes"])),
             (tr("Durée"), f"{s['duration']} s"),
             (tr("Débit moyen"),
-             f"{s['avg_pps']:.1f} {tr('paquets/s')}  ({format_bytes(s['avg_bps'])}/s)"),
+             f"{s['avg_pps']:.1f} {tr('paquets/s')}  ({format_bytes(s['avg_bytes_per_s'])}/s)"),
             (tr("Hôtes distincts"), str(s["distinct_talkers"])),
             (tr("Conversations"), str(s["distinct_conversations"])),
         ]

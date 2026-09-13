@@ -7,7 +7,7 @@ from argosnet.core.stats import Talker
 def test_build_html_report_contains_sections_and_escapes():
     summary = {
         "total_packets": 10, "total_bytes": 2048, "duration": 5,
-        "avg_pps": 2.0, "avg_bps": 400.0,
+        "avg_pps": 2.0, "avg_bytes_per_s": 400.0,
         "protocols": [("TCP", 7), ("DNS", 3)],
         "distinct_talkers": 4, "distinct_conversations": 3,
     }
