@@ -436,7 +436,7 @@ class MainWindow(QMainWindow):
         self.alerts_view.reset()
 
     def _update_alert_tab(self, total: int, critical: int) -> None:
-        label = "Alertes" if total == 0 else f"Alertes ({total})"
+        label = tr("Alertes") if total == 0 else tr("Alertes ({total})").format(total=total)
         self.tabs.setTabText(self._alerts_tab_index, label)
 
     @staticmethod

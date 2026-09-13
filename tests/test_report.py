@@ -27,6 +27,8 @@ def test_build_html_report_contains_sections_and_escapes():
     assert "ARP spoofing" in report
     assert "Mon PC" in report
     assert "&lt;b&gt;" in report          # échappement HTML des champs
+    assert "Alertes (1)" in report        # nombre d'alertes incluses (#40)
+    assert "2 000" in report              # plafond de la vue mentionné (#40)
 
 
 def test_csv_safe_neutralizes_formulas():

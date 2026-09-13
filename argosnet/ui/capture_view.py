@@ -191,7 +191,7 @@ class CaptureView(QWidget):
         bar1.addWidget(self._iface_combo)
         bar1.addWidget(QLabel(tr("Filtre capture (BPF) :")))
         self._bpf_edit = QLineEdit()
-        self._bpf_edit.setPlaceholderText("ex. tcp port 443, host 192.168.1.1…")
+        self._bpf_edit.setPlaceholderText(tr("ex. tcp port 443, host 192.168.1.1…"))
         bar1.addWidget(self._bpf_edit, 1)
         self._ring_check = QCheckBox(tr("Anneau"))
         self._ring_check.setToolTip(
@@ -215,7 +215,7 @@ class CaptureView(QWidget):
         bar2 = QHBoxLayout()
         bar2.addWidget(QLabel(tr("Filtre d'affichage :")))
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("ex. dns, ip.addr==192.168.1.1, tcp.port==443…")
+        self._filter_edit.setPlaceholderText(tr("ex. dns, ip.addr==192.168.1.1, tcp.port==443…"))
         self._filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
         self._filter_completer = QCompleter(self)
         self._filter_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -468,14 +468,43 @@ class CaptureView(QWidget):
                 self, tr("Rien à enregistrer"), tr("Aucun paquet à exporter.")
             )
             return
+        packets = self._model.all_packets()
+        if self._filter_edit.text().strip():
+            # Un filtre d'affichage est actif : l'utilisateur choisit ce qu'il exporte.
+            box = QMessageBox(
+                QMessageBox.Icon.Question, tr("Exporter la capture"),
+                tr("Un filtre d'affichage est actif : exporter seulement les paquets affichés ?"),
+                QMessageBox.StandardButton.NoButton, self,
+            )
+            shown_btn = box.addButton(tr("Paquets affichés"), QMessageBox.ButtonRole.AcceptRole)
+            full_btn = box.addButton(tr("Toute la capture"), QMessageBox.ButtonRole.RejectRole)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == shown_btn:
+                packets = []
+                for row in range(self._proxy.rowCount()):
+                    source = self._proxy.mapToSource(self._proxy.index(row, 0))
+                    record = self._model.record_at(source.row())
+                    if record is not None:
+                        packets.append(record.packet)
+                if not packets:
+                    QMessageBox.information(
+                        self, tr("Rien à enregistrer"), tr("Aucun paquet à exporter.")
+                    )
+                    return
+            elif clicked != full_btn:
+                return  # annulé
         path, _ = QFileDialog.getSaveFileName(
             self, tr("Enregistrer la capture"), "capture.pcap", tr("Captures (*.pcap)")
         )
         if not path:
             return
+        if not path.lower().endswith(".pcap"):
+            path += ".pcap"
         try:
             from scapy.utils import wrpcap
-            wrpcap(path, self._model.all_packets())
+            wrpcap(path, packets)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
                 self, tr("Écriture impossible"),

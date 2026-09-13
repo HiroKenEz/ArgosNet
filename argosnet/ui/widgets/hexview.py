@@ -4,6 +4,8 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QPlainTextEdit
 
+from argosnet.core.i18n import tr
+
 
 class HexView(QPlainTextEdit):
     def __init__(self) -> None:
@@ -14,7 +16,7 @@ class HexView(QPlainTextEdit):
         font.setStyleHint(QFont.StyleHint.Monospace)
         font.setPointSize(10)
         self.setFont(font)
-        self.setPlaceholderText("Sélectionnez un paquet pour afficher son contenu hexadécimal.")
+        self.setPlaceholderText(tr("Sélectionnez un paquet pour afficher son contenu hexadécimal."))
 
     def show_dump(self, dump: str) -> None:
         self.setPlainText(dump)

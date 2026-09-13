@@ -32,6 +32,7 @@ _EN: dict[str, str] = {
     "Conversations": "Conversations",
     "Carte": "Map",
     "Alertes": "Alerts",
+    "Alertes ({total})": "Alerts ({total})",
     "{count} interface(s) réseau détectée(s)": "{count} network interface(s) detected",
     # Menus
     "&Fichier": "&File",
@@ -75,6 +76,8 @@ _EN: dict[str, str] = {
     # Barre de capture
     "Interface :": "Interface:",
     "Filtre capture (BPF) :": "Capture filter (BPF):",
+    "ex. tcp port 443, host 192.168.1.1…": "e.g. tcp port 443, host 192.168.1.1…",
+    "ex. dns, ip.addr==192.168.1.1, tcp.port==443…": "e.g. dns, ip.addr==192.168.1.1, tcp.port==443…",
     "Anneau": "Ring",
     "▶ Démarrer": "▶ Start",
     "■ Arrêter": "■ Stop",
@@ -87,6 +90,7 @@ _EN: dict[str, str] = {
     "Suivant": "Next",
     # Onglet Scan
     "Cible :": "Target:",
+    "ex. 192.168.1.0/24": "e.g. 192.168.1.0/24",
     "Découvrir les hôtes": "Discover hosts",
     "Scanner les ports de l'hôte sélectionné": "Scan ports of selected host",
     "Prêt.": "Ready.",
@@ -293,6 +297,11 @@ _EN: dict[str, str] = {
     "Aucun paquet à exporter.": "No packet to export.",
     "Enregistrer la capture": "Save capture",
     "Captures (*.pcap)": "Captures (*.pcap)",
+    "Exporter la capture": "Export capture",
+    "Un filtre d'affichage est actif : exporter seulement les paquets affichés ?":
+        "A display filter is active: export only the displayed packets?",
+    "Paquets affichés": "Displayed packets",
+    "Toute la capture": "Entire capture",
     "Écriture impossible": "Write failed",
     "Échec de l'enregistrement :\n{error}": "Save failed:\n{error}",
     "Filtrer la source  {addr}": "Filter source  {addr}",
@@ -312,6 +321,8 @@ _EN: dict[str, str] = {
     "Suivre le flux TCP — {a} ↔ {b}": "Follow TCP stream — {a} ↔ {b}",
     "octets": "bytes",
     "(tronqué)": "(truncated)",
+    "Sélectionnez un paquet pour afficher son contenu hexadécimal.":
+        "Select a packet to show its hexadecimal dump.",
     "Copier": "Copy",
     "Fermer": "Close",
     # Environnement (démarrage)

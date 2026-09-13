@@ -155,7 +155,9 @@ class PacketTableModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
-        record = self._records[index.row()]
+        record = self.record_at(index.row())
+        if record is None:
+            return None  # index périmé (proxy stale pendant insert/reset)
         col = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:

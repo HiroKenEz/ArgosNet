@@ -79,7 +79,10 @@ def build_html_report(*, summary, top_talkers, conversations, alerts, devices) -
     out.append("</table>")
 
     out.append(
-        f"<h2>Alertes ({len(alerts)})</h2><table>"
+        f"<h2>Alertes ({len(alerts)})</h2>"
+        "<p class='meta'>Alertes incluses : "
+        f"{len(alerts)} (vue plafonnée à 2 000 — l'historique complet est en base).</p>"
+        "<table>"
         "<tr><th>Heure</th><th>Gravité</th><th>Catégorie</th><th>Source</th><th>Détail</th></tr>"
     )
     for alert in alerts:

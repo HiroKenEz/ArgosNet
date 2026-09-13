@@ -65,7 +65,7 @@ class ScanView(QWidget):
 
         bar.addWidget(QLabel(tr("Cible :")))
         self._target_edit = QLineEdit()
-        self._target_edit.setPlaceholderText("ex. 192.168.1.0/24")
+        self._target_edit.setPlaceholderText(tr("ex. 192.168.1.0/24"))
         bar.addWidget(self._target_edit, 1)
 
         self._discover_btn = QPushButton(tr("Découvrir les hôtes"))
