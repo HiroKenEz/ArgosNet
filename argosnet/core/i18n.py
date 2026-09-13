@@ -236,6 +236,22 @@ _EN: dict[str, str] = {
     "{count} paquet(s)": "{count} packet(s)",
     "{shown} / {total} paquet(s)": "{shown} / {total} packet(s)",
     "   ⚠ {count} perdu(s)": "   ⚠ {count} dropped",
+    "   ⚠ {count} non analysé(s)": "   ⚠ {count} unanalyzed",
+    "Capture en cours": "Capture in progress",
+    "Arrêtez la capture avant d'ouvrir un fichier.":
+        "Stop the capture before opening a file.",
+    "Chargement en cours": "Loading in progress",
+    "Un fichier est déjà en cours de chargement.":
+        "A file is already loading.",
+    "Fichier volumineux": "Large file",
+    "Ce fichier pèse {size} : le chargement peut prendre un moment. Continuer ?":
+        "This file weighs {size}: loading may take a while. Continue?",
+    "Limite d'affichage atteinte": "Display limit reached",
+    "Capture arrêtée : {max} paquets affichés (limite). Utilisez la capture en anneau pour une surveillance continue.":
+        "Capture stopped: {max} packets displayed (limit). Use ring capture for continuous monitoring.",
+    "Fichier tronqué": "Truncated file",
+    "Fichier tronqué aux {max} premiers paquets (limite d'affichage).":
+        "File truncated to the first {max} packets (display limit).",
     "texte dans source, destination, protocole ou info…":
         "text in source, destination, protocol or info…",
     "Capture en anneau impossible": "Ring capture failed",

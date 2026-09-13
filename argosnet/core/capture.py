@@ -113,6 +113,7 @@ class CaptureController:
         from scapy.sendrecv import AsyncSniffer
 
         self._ring = ring
+        self.reset_dropped()
         self._sniffer = AsyncSniffer(
             iface=iface,
             filter=(bpf_filter or None),
@@ -159,13 +160,28 @@ class CaptureController:
                 pass
 
     def dropped_count(self) -> int:
-        return self._dropped
+        with self._lock:
+            return self._dropped
 
-    def drain(self) -> list[Any]:
-        """Récupère et vide les paquets accumulés depuis le dernier appel."""
+    def reset_dropped(self) -> None:
+        """Remet à zéro le compteur de paquets perdus (début de capture, effacement)."""
+        with self._lock:
+            self._dropped = 0
+
+    def drain(self, max_items: int | None = None) -> list[Any]:
+        """Récupère les paquets accumulés depuis le dernier appel.
+
+        Au plus ``max_items`` paquets (``None`` = tout) : borne le travail de
+        dissection fait dans le thread graphique à chaque tick. Le reste attend
+        le tick suivant ; si le débit dépasse durablement, le tampon se remplit
+        et les pertes sont comptées et visibles.
+        """
         with self._lock:
             if not self._buffer:
                 return []
-            items = list(self._buffer)
-            self._buffer.clear()
+            if max_items is None or len(self._buffer) <= max_items:
+                items = list(self._buffer)
+                self._buffer.clear()
+            else:
+                items = [self._buffer.popleft() for _ in range(max_items)]
         return items

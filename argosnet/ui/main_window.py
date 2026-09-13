@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from argosnet import __app_name__, __version__
 from argosnet.core.analysis import AnalysisWorker
+from argosnet.core.detection.alert import Severity
 from argosnet.core.i18n import tr
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.core.detection.detectors import NewDeviceDetector
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
         self._worker = AnalysisWorker(self._stats, self._detection)
         self._worker.alerts_ready.connect(self._on_alerts)
         self._worker.start()
+        self.capture_view.set_analysis_worker(self._worker)
 
         # Le flux de paquets part vers le worker d'analyse ; l'effacement remet à zéro
         # statistiques et détecteurs (l'historique des alertes persiste en base).
@@ -108,7 +110,7 @@ class MainWindow(QMainWindow):
 
         # Validation périodique des écritures SQLite (batching, cf. audit R2).
         self._flush_timer = QTimer(self)
-        self._flush_timer.setInterval(3000)
+        self._flush_timer.setInterval(1000)
         self._flush_timer.timeout.connect(self._db.flush)
         self._flush_timer.start()
 
@@ -218,6 +220,8 @@ class MainWindow(QMainWindow):
         from argosnet.core.geoip import close_readers
 
         self.capture_view.stop_capture_if_running()
+        self.capture_view.cancel_pcap_load()
+        self.scan_view.shutdown()
         self._worker.stop()  # arrête le thread d'analyse avant de fermer la base
         self._db.flush()
         self._db.close()
@@ -343,12 +347,17 @@ class MainWindow(QMainWindow):
         self.capture_view.open_pcap_dialog()
 
     # ---------------------------------------------------------------- détection
-    def _on_alerts(self, alerts: list) -> None:
+    def _on_alerts(self, generation: int, alerts: list) -> None:
         """Alertes remontées par le worker d'analyse (exécuté dans le thread GUI)."""
+        if generation != self._worker.generation:
+            return  # lot dépilé avant « Effacer » : alertes d'une ancienne génération
         if not alerts:
             return
         self.alerts_view.add_alerts(alerts)
         self._db.save_alerts(alerts)
+        criticals = [a for a in alerts if a.severity == Severity.CRITICAL]
+        if criticals:
+            self._db.flush()  # durabilité immédiate des alertes critiques
         # Enregistre les appareils nouvellement découverts (source = MAC).
         new_device = False
         for alert in alerts:
@@ -357,7 +366,6 @@ class MainWindow(QMainWindow):
                 new_device = True
         if new_device:
             self.devices_view.refresh()
-        criticals = [a for a in alerts if a.severity.name == "CRITICAL"]
         if criticals:
             self.statusBar().showMessage(
                 tr("⚠️ {count} alerte(s) critique(s) détectée(s)").format(count=len(criticals)),
