@@ -62,6 +62,9 @@ FILTERS_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "filters.json"
 RING_DIR = os.path.join(os.path.expanduser("~"), ".argosnet", "ring")
 RING_MAX_FILES = 10       # nombre de .pcap conservés (fenêtre glissante)
 RING_MAX_PACKETS = 50_000  # paquets par fichier avant rotation
+MAX_PACKETS_IN_VIEW = 300_000  # plafond d'affichage (live comme pcap, anti-OOM)
+PCAP_CONFIRM_BYTES = 1_000_000_000  # confirmation avant de charger au-delà d'1 Go
+DRAIN_MAX_ITEMS = 5_000   # paquets drainés au plus par tick du thread graphique
 BUILTIN_FILTERS = [
     "dns", "arp", "icmp", "proto==tcp", "proto==udp",
     "tcp.port==443", "tcp.port==80", "udp.port==53",
@@ -86,10 +89,12 @@ class PcapLoader(QThread):
 
     CHUNK = 5000
 
-    def __init__(self, path: str, base_number: int) -> None:
+    def __init__(self, path: str, base_number: int, max_packets: int = MAX_PACKETS_IN_VIEW) -> None:
         super().__init__()
         self._path = path
         self._base = base_number
+        self._max_packets = max_packets
+        self.hit_cap = False  # vrai si la lecture a été tronquée au plafond
 
     def run(self) -> None:
         try:
@@ -98,6 +103,11 @@ class PcapLoader(QThread):
             batch: list = []
             with PcapReader(self._path) as reader:
                 for pkt in reader:
+                    if self.isInterruptionRequested():
+                        break  # bouton Annuler
+                    if count >= self._max_packets:
+                        self.hit_cap = True
+                        break
                     batch.append(make_record(self._base + count, pkt))
                     count += 1
                     if len(batch) >= self.CHUNK:
@@ -146,6 +156,8 @@ class CaptureView(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._controller = CaptureController()
+        self._loader: PcapLoader | None = None
+        self._analysis_worker = None  # worker d'analyse (compteur non analysés)
 
         self._model = PacketTableModel()
         self._proxy = PacketFilterProxy()
@@ -179,7 +191,7 @@ class CaptureView(QWidget):
         bar1.addWidget(self._iface_combo)
         bar1.addWidget(QLabel(tr("Filtre capture (BPF) :")))
         self._bpf_edit = QLineEdit()
-        self._bpf_edit.setPlaceholderText("ex. tcp port 443, host 192.168.1.1…")
+        self._bpf_edit.setPlaceholderText(tr("ex. tcp port 443, host 192.168.1.1…"))
         bar1.addWidget(self._bpf_edit, 1)
         self._ring_check = QCheckBox(tr("Anneau"))
         self._ring_check.setToolTip(
@@ -203,7 +215,7 @@ class CaptureView(QWidget):
         bar2 = QHBoxLayout()
         bar2.addWidget(QLabel(tr("Filtre d'affichage :")))
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("ex. dns, ip.addr==192.168.1.1, tcp.port==443…")
+        self._filter_edit.setPlaceholderText(tr("ex. dns, ip.addr==192.168.1.1, tcp.port==443…"))
         self._filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
         self._filter_completer = QCompleter(self)
         self._filter_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -329,22 +341,35 @@ class CaptureView(QWidget):
     def _stop_capture(self) -> None:
         self._controller.stop()
         self._timer.stop()
-        self._drain()  # récupère les derniers paquets en attente
+        # Vide le tampon jusqu'au bout (plusieurs ticks si besoin) : sinon les
+        # paquets restants réapparaîtraient à la capture suivante.
+        while self._drain():
+            pass
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._iface_combo.setEnabled(True)
         self._bpf_edit.setEnabled(True)
         self._ring_check.setEnabled(True)
 
-    def _drain(self) -> None:
-        packets = self._controller.drain()
+    def _drain(self) -> int:
+        packets = self._controller.drain(DRAIN_MAX_ITEMS)
         if not packets:
-            return
+            return 0
         base = self._model.next_number()
         records = [make_record(base + i, pkt) for i, pkt in enumerate(packets)]
         self._model.append_records(records)
         self._update_count()
         self.packets_added.emit(base, packets)
+        if self._model.rowCount() >= MAX_PACKETS_IN_VIEW and self._controller.is_running():
+            # Plafond atteint en live : arrêt automatique, la capture en anneau
+            # (fichiers rotatifs) prend le relais pour la surveillance continue.
+            self._stop_capture()
+            QMessageBox.information(
+                self,
+                tr("Limite d'affichage atteinte"),
+                tr("Capture arrêtée : {max} paquets affichés (limite). Utilisez la capture en anneau pour une surveillance continue.").format(max=MAX_PACKETS_IN_VIEW),
+            )
+        return len(packets)
 
     # ---------------------------------------------------------- import/export
     def open_pcap_dialog(self) -> None:
@@ -355,14 +380,50 @@ class CaptureView(QWidget):
         if path:
             self.load_pcap(path)
 
+    def set_analysis_worker(self, worker) -> None:
+        """Référence le worker d'analyse (compteur de paquets non analysés)."""
+        self._analysis_worker = worker
+
     def load_pcap(self, path: str) -> None:
         """Charge un fichier .pcap en arrière-plan, par lots (ne gèle pas la GUI)."""
-        self._loader = PcapLoader(path, self._model.next_number())
-        self._progress = QProgressDialog(tr("Lecture de la capture…"), None, 0, 0, self)
+        if self._controller.is_running():
+            QMessageBox.information(
+                self, tr("Capture en cours"),
+                tr("Arrêtez la capture avant d'ouvrir un fichier."),
+            )
+            return
+        if self._loader is not None and self._loader.isRunning():
+            QMessageBox.information(
+                self, tr("Chargement en cours"),
+                tr("Un fichier est déjà en cours de chargement."),
+            )
+            return
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        if size > PCAP_CONFIRM_BYTES:
+            answer = QMessageBox.question(
+                self, tr("Fichier volumineux"),
+                tr("Ce fichier pèse {size} : le chargement peut prendre un moment. Continuer ?").format(
+                    size=f"{size / 1e9:.1f} Go"),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        remaining = MAX_PACKETS_IN_VIEW - self._model.rowCount()
+        if remaining <= 0:
+            QMessageBox.information(
+                self, tr("Limite d'affichage atteinte"),
+                tr("La vue affiche déjà {max} paquets (limite). Effacez la capture avant d'ouvrir un fichier.").format(max=MAX_PACKETS_IN_VIEW),
+            )
+            return
+        self._loader = PcapLoader(path, self._model.next_number(), max_packets=remaining)
+        self._progress = QProgressDialog(
+            tr("Lecture de la capture…"), tr("Annuler"), 0, 0, self)
         self._progress.setWindowTitle(tr("Chargement"))
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
-        self._progress.setCancelButton(None)
         self._progress.setMinimumDuration(0)
+        self._progress.canceled.connect(self._cancel_pcap_load)
         self._loader.chunk.connect(self._on_pcap_chunk)
         self._loader.progress.connect(
             lambda n: self._progress.setLabelText(
@@ -370,9 +431,34 @@ class CaptureView(QWidget):
             )
         )
         self._loader.failed.connect(self._on_pcap_failed)
-        self._loader.finished.connect(self._progress.close)
+        self._loader.finished.connect(self._on_pcap_finished)
         self._loader.start()
         self._progress.show()
+
+    def _cancel_pcap_load(self) -> None:
+        """Demande l'interruption du chargement en cours (bouton Annuler)."""
+        if self._loader is not None and self._loader.isRunning():
+            self._loader.requestInterruption()
+
+    def cancel_pcap_load(self) -> None:
+        """Interrompt et attend un chargement en cours (fermeture de l'application)."""
+        loader = self._loader
+        if loader is not None and loader.isRunning():
+            loader.requestInterruption()
+            loader.wait()
+
+    def _on_pcap_finished(self) -> None:
+        if hasattr(self, "_progress"):
+            self._progress.close()
+        loader = self._loader
+        self._loader = None  # libéré : un 2e load/cancel ne touche plus un objet C++ supprimé
+        if loader is not None:
+            loader.deleteLater()
+            if loader.hit_cap:
+                QMessageBox.information(
+                    self, tr("Fichier tronqué"),
+                    tr("Fichier tronqué aux {max} premiers paquets (limite d'affichage).").format(max=MAX_PACKETS_IN_VIEW),
+                )
 
     def _on_pcap_chunk(self, records: list) -> None:
         self._model.append_records(records)
@@ -394,14 +480,43 @@ class CaptureView(QWidget):
                 self, tr("Rien à enregistrer"), tr("Aucun paquet à exporter.")
             )
             return
+        packets = self._model.all_packets()
+        if self._filter_edit.text().strip():
+            # Un filtre d'affichage est actif : l'utilisateur choisit ce qu'il exporte.
+            box = QMessageBox(
+                QMessageBox.Icon.Question, tr("Exporter la capture"),
+                tr("Un filtre d'affichage est actif : exporter seulement les paquets affichés ?"),
+                QMessageBox.StandardButton.NoButton, self,
+            )
+            shown_btn = box.addButton(tr("Paquets affichés"), QMessageBox.ButtonRole.AcceptRole)
+            full_btn = box.addButton(tr("Toute la capture"), QMessageBox.ButtonRole.RejectRole)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == shown_btn:
+                packets = []
+                for row in range(self._proxy.rowCount()):
+                    source = self._proxy.mapToSource(self._proxy.index(row, 0))
+                    record = self._model.record_at(source.row())
+                    if record is not None:
+                        packets.append(record.packet)
+                if not packets:
+                    QMessageBox.information(
+                        self, tr("Rien à enregistrer"), tr("Aucun paquet à exporter.")
+                    )
+                    return
+            elif clicked != full_btn:
+                return  # annulé
         path, _ = QFileDialog.getSaveFileName(
             self, tr("Enregistrer la capture"), "capture.pcap", tr("Captures (*.pcap)")
         )
         if not path:
             return
+        if not path.lower().endswith(".pcap"):
+            path += ".pcap"
         try:
             from scapy.utils import wrpcap
-            wrpcap(path, self._model.all_packets())
+            wrpcap(path, packets)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
                 self, tr("Écriture impossible"),
@@ -419,6 +534,7 @@ class CaptureView(QWidget):
         self._model.clear()
         self._detail.clear()
         self._hex.clear_dump()
+        self._controller.reset_dropped()
         self._update_count()
         self.cleared.emit()
 
@@ -432,6 +548,10 @@ class CaptureView(QWidget):
         dropped = self._controller.dropped_count()
         if dropped:
             text += tr("   ⚠ {count} perdu(s)").format(count=dropped)
+        worker = self._analysis_worker
+        pending = worker.dropped_packets() if worker is not None else 0
+        if pending:
+            text += tr("   ⚠ {count} non analysé(s)").format(count=pending)
         self._count_label.setText(text)
 
     # ------------------------------------------------------- sélection/détail

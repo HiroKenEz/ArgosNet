@@ -18,6 +18,13 @@ ASN_DB = os.path.join(_CONF_DIR, "GeoLite2-ASN.mmdb")
 
 _CGN = ipaddress.ip_network("100.64.0.0/10")  # NAT de fournisseur (RFC 6598)
 
+# Plages de documentation (RFC 5737) et broadcast : jamais routables sur Internet.
+_DOC_NETS = (
+    ipaddress.ip_network("192.0.2.0/24"),
+    ipaddress.ip_network("198.51.100.0/24"),
+    ipaddress.ip_network("203.0.113.0/24"),
+)
+
 
 def classify_ip(ip: str) -> str:
     """Catégorie hors-ligne d'une IP : public, privé, loopback, CGN, multicast…"""
@@ -33,10 +40,12 @@ def classify_ip(ip: str) -> str:
         return "multicast"
     if isinstance(addr, ipaddress.IPv4Address) and addr in _CGN:
         return "CGN"
+    if addr.is_unspecified or addr.is_reserved:
+        return "réservé"
+    if isinstance(addr, ipaddress.IPv4Address) and any(addr in net for net in _DOC_NETS):
+        return "réservé"
     if addr.is_private:
         return "privé"
-    if addr.is_reserved or addr.is_unspecified:
-        return "réservé"
     return "public"
 
 

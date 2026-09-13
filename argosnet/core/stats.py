@@ -20,6 +20,13 @@ from argosnet.core.dissect import _endpoints, _highest_protocol, packet_length
 # de reconstruction de la série sur une capture live de longue durée (jusqu'à 1 h).
 THROUGHPUT_WINDOW = 3600
 
+# Plafonds des tables indexées par les adresses vues (un attaquant forgeant des
+# sources aléatoires ne doit pas faire croître la mémoire sans borne). Au-delà, les
+# nouvelles clés ne sont plus suivies individuellement, mais les totaux continuent
+# d'être comptés.
+MAX_TALKER_KEYS = 100_000
+MAX_CONV_KEYS = 200_000
+
 
 @dataclass
 class Talker:
@@ -64,20 +71,23 @@ class StatsEngine:
         self.proto_counts[proto] += 1
 
         src, dst = _endpoints(packet)
-        for endpoint in (src, dst):
+        endpoints = (src,) if src == dst else (src, dst)
+        for endpoint in endpoints:
             if endpoint and endpoint != "—":
-                self.talker_packets[endpoint] += 1
-                self.talker_bytes[endpoint] += length
+                if endpoint in self.talker_packets or len(self.talker_packets) < MAX_TALKER_KEYS:
+                    self.talker_packets[endpoint] += 1
+                    self.talker_bytes[endpoint] += length
 
         if src != "—" and dst != "—":
             key = (src, dst) if src <= dst else (dst, src)
-            self.conv_packets[key] += 1
-            self.conv_bytes[key] += length
+            if key in self.conv_packets or len(self.conv_packets) < MAX_CONV_KEYS:
+                self.conv_packets[key] += 1
+                self.conv_bytes[key] += length
 
         ts = float(getattr(packet, "time", 0.0) or 0.0)
         if self._t0 is None:
             self._t0 = ts
-        bucket = int(ts - self._t0) if self._t0 is not None else 0
+        bucket = max(0, int(ts - self._t0)) if self._t0 is not None else 0
         self.per_second_packets[bucket] += 1
         self.per_second_bytes[bucket] += length
         self.per_second_proto[bucket][proto] += 1
@@ -145,14 +155,14 @@ class StatsEngine:
                 "total_bytes": self.total_bytes,
                 "duration": dur,
                 "avg_pps": (self.total_packets / dur) if dur else 0.0,
-                "avg_bps": (self.total_bytes / dur) if dur else 0.0,
+                "avg_bytes_per_s": (self.total_bytes / dur) if dur else 0.0,
                 "protocols": self.protocol_breakdown(),
                 "distinct_talkers": len(self.talker_bytes),
                 "distinct_conversations": len(self.conv_bytes),
             }
 
     def throughput_series(self) -> tuple[list[int], list[int], list[float]]:
-        """Retourne (secondes, paquets/s, Ko/s) sur la fenêtre glissante conservée."""
+        """Retourne (secondes, paquets/s, Kio/s) sur la fenêtre glissante conservée."""
         with self._lock:
             if not self.per_second_packets:
                 return [], [], []
@@ -160,8 +170,8 @@ class StatsEngine:
             first = max(min(self.per_second_packets), last - THROUGHPUT_WINDOW + 1)
             seconds = list(range(first, last + 1))
             pps = [self.per_second_packets.get(s, 0) for s in seconds]
-            kbps = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
-            return seconds, pps, kbps
+            kib_s = [self.per_second_bytes.get(s, 0) / 1024.0 for s in seconds]
+            return seconds, pps, kib_s
 
     def throughput_by_protocol(self, top_n: int = 5) -> tuple[list[int], dict[str, list[int]]]:
         """Retourne (secondes, {protocole: paquets/s}) pour les ``top_n`` protocoles."""

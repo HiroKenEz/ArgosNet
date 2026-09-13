@@ -91,6 +91,14 @@ def _udp_ports(pkt) -> tuple[int, int]:
     return int(udp.sport), int(udp.dport)
 
 
+def _has_icmpv6(pkt) -> bool:
+    """Vrai si le paquet transporte de l'ICMPv6 (IPv6, next-header 58)."""
+    try:
+        return pkt.haslayer(IPv6) and int(pkt.getlayer(IPv6).nh) == 58
+    except Exception:
+        return False
+
+
 def _highest_protocol(pkt) -> str:
     """Nom du protocole le plus « parlant » présent dans le paquet."""
     # Ordre de priorité : applicatif > réseau > liaison.
@@ -102,6 +110,8 @@ def _highest_protocol(pkt) -> str:
         return "ARP"
     if pkt.haslayer(ICMP):
         return "ICMP"
+    if _has_icmpv6(pkt):
+        return "ICMPv6"
     if _has_dhcp(pkt):
         return "DHCP"
     if pkt.haslayer(TCP):
@@ -152,6 +162,8 @@ def _info(pkt, protocol: str) -> str:
         if protocol == "ICMP" and pkt.haslayer(ICMP):
             icmp = pkt.getlayer(ICMP)
             return f"ICMP type={icmp.type} code={icmp.code}"
+        if protocol == "ICMPv6":
+            return _icmpv6_info(pkt)
         if protocol == "HTTP":
             return _http_info(_raw_payload(pkt))
         if protocol == "TLS":
@@ -178,6 +190,21 @@ def _info(pkt, protocol: str) -> str:
         return pkt.summary()
     except Exception:
         return protocol
+
+
+def _icmpv6_info(pkt) -> str:
+    """Ligne d'information ICMPv6 (type/code, id/seq pour l'echo)."""
+    try:
+        inner = pkt.getlayer(IPv6).payload
+        name = getattr(inner, "name", inner.__class__.__name__)
+        type_ = getattr(inner, "type", "?")
+        code = getattr(inner, "code", "?")
+        extra = ""
+        if hasattr(inner, "id") and hasattr(inner, "seq"):
+            extra = f"  id={inner.id} seq={inner.seq}"
+        return f"ICMPv6  {name}  type={type_} code={code}{extra}"
+    except Exception:
+        return "ICMPv6"
 
 
 def _http_info(payload: bytes) -> str:
@@ -243,6 +270,13 @@ def _tls_info(payload: bytes) -> str:
     content_type = payload[0]
     if content_type == 0x16 and len(payload) > 5:  # handshake
         if payload[5] == 0x01:
+            try:
+                from argosnet.core.ja3 import client_hello_complete
+                if not client_hello_complete(payload):
+                    # ClientHello fragmenté sur plusieurs segments : pas de SNI/JA3 faux.
+                    return "TLS  Client Hello (fragmenté)"
+            except Exception:
+                pass
             sni = _tls_sni(payload)
             extra = f"   (SNI: {sni})" if sni else ""
             ja3 = _tls_ja3(payload)
@@ -374,12 +408,16 @@ def layer_tree(pkt) -> list[tuple[str, list[tuple[str, str]]]]:
 
 
 def hexdump(pkt) -> str:
-    """Vidage hexadécimal du paquet (offset | hex | ASCII)."""
+    """Vidage hexadécimal du paquet (offset | hex | ASCII), sans jamais lever."""
     try:
         from scapy.utils import hexdump as scapy_hexdump
         return scapy_hexdump(pkt, dump=True)
     except Exception:
+        pass
+    try:
         return _fallback_hexdump(bytes(pkt))
+    except Exception:
+        return ""
 
 
 def _fallback_hexdump(data: bytes, width: int = 16) -> str:

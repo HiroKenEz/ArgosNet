@@ -33,7 +33,7 @@ def test_top_talkers():
 
 
 def test_throughput_sums_to_total():
-    _seconds, pps, _kbps = _engine().throughput_series()
+    _seconds, pps, _kib_s = _engine().throughput_series()
     assert sum(pps) == 9
 
 
@@ -129,7 +129,59 @@ def test_throughput_window_bounds_series():
 
     engine = StatsEngine()
     engine.add_packets([pkt(1000.0), pkt(1000.0 + THROUGHPUT_WINDOW + 500)])
-    seconds, pps, _kbps = engine.throughput_series()
+    seconds, pps, _kib_s = engine.throughput_series()
     assert engine.total_packets == 2      # total non affecté par la purge
     assert 0 not in seconds               # la première seconde a été purgée
     assert sum(pps) == 1                  # seul le paquet récent reste dans la fenêtre
+
+
+def _gratuitous_arp(t=1000.0):
+    from scapy.layers.l2 import ARP
+
+    pkt = Ether(src="02:00:00:00:00:01", dst="ff:ff:ff:ff:ff:ff") / ARP(
+        op=1, psrc="192.168.1.10", pdst="192.168.1.10"
+    )
+    pkt.time = t
+    return pkt
+
+
+def test_talker_counted_once_when_src_equals_dst():
+    # ARP gratuit (psrc == pdst) : 1 paquet compté 1×, pas 2× (#28).
+    engine = StatsEngine()
+    engine.add_packet(_gratuitous_arp())
+    assert engine.total_packets == 1
+    assert engine.talker_packets["192.168.1.10"] == 1
+
+
+def test_no_negative_buckets_on_unordered_pcap():
+    # Pcap désordonné : pas de clés de secondes négatives (#33).
+    engine = StatsEngine()
+    engine.add_packet(_gratuitous_arp(1000.0))
+    engine.add_packet(_gratuitous_arp(900.0))
+    assert engine.total_packets == 2
+    assert all(b >= 0 for b in engine.per_second_packets)
+
+
+def test_summary_uses_avg_bytes_per_s():
+    # avg_bps (trompeur) renommé en avg_bytes_per_s (#33).
+    s = _engine().summary()
+    assert "avg_bps" not in s
+    assert s["avg_bytes_per_s"] == s["total_bytes"] / s["duration"]
+
+
+def test_talker_and_conv_keys_capped(monkeypatch):
+    # Plafonds : nouvelles clés ignorées, totaux toujours comptés (#6).
+    import argosnet.core.stats as stats_mod
+
+    monkeypatch.setattr(stats_mod, "MAX_TALKER_KEYS", 5)
+    monkeypatch.setattr(stats_mod, "MAX_CONV_KEYS", 5)
+    engine = StatsEngine()
+    for i in range(10):
+        pkt = Ether(src="02:00:00:00:00:01") / IP(
+            src=f"10.1.0.{i + 1}", dst="10.2.0.1"
+        ) / TCP()
+        pkt.time = 1000.0 + i * 0.01
+        engine.add_packet(pkt)
+    assert engine.total_packets == 10
+    assert len(engine.talker_packets) == 5
+    assert len(engine.conv_packets) <= 5

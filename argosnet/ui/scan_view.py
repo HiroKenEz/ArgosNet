@@ -65,7 +65,7 @@ class ScanView(QWidget):
 
         bar.addWidget(QLabel(tr("Cible :")))
         self._target_edit = QLineEdit()
-        self._target_edit.setPlaceholderText("ex. 192.168.1.0/24")
+        self._target_edit.setPlaceholderText(tr("ex. 192.168.1.0/24"))
         bar.addWidget(self._target_edit, 1)
 
         self._discover_btn = QPushButton(tr("Découvrir les hôtes"))
@@ -126,14 +126,32 @@ class ScanView(QWidget):
             return None
         return iface.raw if (iface.capturable and iface.raw is not None) else iface.name
 
+    def shutdown(self) -> None:
+        """Arrête le timer périodique et attend les threads (fermeture de l'application)."""
+        self._schedule_timer.stop()
+        for thread in (self._discovery, self._portscan):
+            if thread is not None and thread.isRunning():
+                thread.wait()
+
     def _start_discovery(self) -> None:
-        target = self._target_edit.text().strip()
-        if not target:
-            QMessageBox.information(
-                self, tr("Cible manquante"),
-                tr("Indiquez un sous-réseau (ex. 192.168.1.0/24)."),
-            )
+        if self._discovery is not None and self._discovery.isRunning():
+            return  # déjà en cours (double-clic, chevauchement périodique)
+        from argosnet.core.scan_target import check_target
+
+        network, error, need_confirm = check_target(self._target_edit.text())
+        if error is not None:
+            QMessageBox.information(self, tr("Cible invalide"), tr(error))
             return
+        assert network is not None
+        if need_confirm:
+            answer = QMessageBox.question(
+                self, tr("Confirmer le scan"),
+                tr("Scanner {count} adresses ({network}) ? Vérifiez que vous êtes autorisé à scanner ce réseau.").format(
+                    count=network.num_addresses, network=str(network)),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        target = str(network)
         self._table.setRowCount(0)
         self._row_by_ip.clear()
         self._discover_btn.setEnabled(False)
@@ -142,7 +160,7 @@ class ScanView(QWidget):
         self._discovery = HostDiscoveryThread(target, self._selected_iface_arg())
         self._discovery.host_found.connect(self._add_host)
         self._discovery.finished_scan.connect(self._discovery_done)
-        self._discovery.error.connect(self._scan_error)
+        self._discovery.error.connect(self._discovery_error)
         self._discovery.start()
 
     def _add_host(self, host: HostInfo) -> None:
@@ -182,13 +200,30 @@ class ScanView(QWidget):
         # Ne lance pas de nouveau balayage si l'un est déjà en cours (anti-chevauchement).
         if self._discovery is not None and self._discovery.isRunning():
             return
+        text = self._target_edit.text().strip()
         # Cible absente : on saute ce tour sans ouvrir de dialogue modal.
-        if not self._target_edit.text().strip():
+        if not text:
+            return
+        from argosnet.core.scan_target import check_target
+
+        network, error, need_confirm = check_target(text)
+        if error is not None or need_confirm:
+            # Pas de popup en périodique : on saute ce tour en expliquant pourquoi.
+            if error is not None:
+                reason = tr(error)
+            else:
+                assert network is not None
+                reason = tr("confirmation requise pour {network}").format(network=str(network))
+            self._status.setText(
+                tr("Scan périodique ignoré : {reason}").format(reason=reason)
+            )
             return
         self._start_discovery()
 
     # --------------------------------------------------------- scan de ports
     def _start_portscan(self) -> None:
+        if self._portscan is not None and self._portscan.isRunning():
+            return  # déjà en cours
         row = self._table.currentRow()
         if row < 0:
             QMessageBox.information(
@@ -201,7 +236,7 @@ class ScanView(QWidget):
 
         self._portscan = PortScanThread(ip, iface=self._selected_iface_arg())
         self._portscan.result.connect(self._portscan_done)
-        self._portscan.error.connect(self._scan_error)
+        self._portscan.error.connect(self._portscan_error)
         self._portscan.start()
 
     def _portscan_done(self, ip: str, open_ports: list) -> None:
@@ -217,8 +252,14 @@ class ScanView(QWidget):
         )
 
     # ------------------------------------------------------------- erreurs
-    def _scan_error(self, message: str) -> None:
+    def _discovery_error(self, message: str) -> None:
+        # Un signal d'erreur par type de scan : l'échec de l'un ne réactive pas
+        # le bouton de l'autre pendant qu'il tourne.
         self._discover_btn.setEnabled(True)
+        self._status.setText(tr("Échec du scan."))
+        QMessageBox.critical(self, tr("Scan impossible"), message)
+
+    def _portscan_error(self, message: str) -> None:
         self._portscan_btn.setEnabled(True)
         self._status.setText(tr("Échec du scan."))
         QMessageBox.critical(self, tr("Scan impossible"), message)

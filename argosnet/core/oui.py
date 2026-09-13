@@ -11,7 +11,11 @@ _unavailable = False
 
 
 def lookup_vendor(mac: str) -> str:
-    """Renvoie le nom du constructeur pour une MAC, ou '' si inconnu/indisponible."""
+    """Renvoie le nom du constructeur pour une MAC, ou '' si inconnu/indisponible.
+
+    N'effectue jamais de requête réseau : si la base OUI locale est absente, on
+    renvoie '' (la mise à jour se fait explicitement via :func:`update_vendor_db`).
+    """
     global _lookup, _unavailable
     if _unavailable or not mac:
         return ""
@@ -22,7 +26,12 @@ def lookup_vendor(mac: str) -> str:
         return ""
     try:
         if _lookup is None:
-            _lookup = MacLookup()
+            probe = MacLookup()
+            if probe.find_vendors_list() is None:
+                # Pas de base locale : le chargement téléchargerait la base sans
+                # timeout (standards-oui.ieee.org). On reste hors-ligne.
+                return ""
+            _lookup = probe
         return _lookup.lookup(mac)
     except FileNotFoundError:
         # Base OUI absente (jamais téléchargée) : on désactive pour ne pas retenter

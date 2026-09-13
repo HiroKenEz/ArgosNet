@@ -28,6 +28,7 @@ DEFAULT_PROTO_COLORS: dict[str, str] = {
     "DHCP": "#e6f7d0",
     "ARP": "#fbf3d0",
     "ICMP": "#ffe0e0",
+    "ICMPv6": "#ffe0e0",
     "HTTP": "#d5f0d5",
     "TLS": "#efe0ff",
     "IPv6": "#eef0f2",
@@ -154,7 +155,9 @@ class PacketTableModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
-        record = self._records[index.row()]
+        record = self.record_at(index.row())
+        if record is None:
+            return None  # index périmé (proxy stale pendant insert/reset)
         col = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:

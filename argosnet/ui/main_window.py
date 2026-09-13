@@ -7,7 +7,7 @@ et persistées en base SQLite.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QHeaderView,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from argosnet import __app_name__, __version__
 from argosnet.core.analysis import AnalysisWorker
+from argosnet.core.detection.alert import Severity
 from argosnet.core.i18n import tr
 from argosnet.core.interfaces import NetIface, list_interfaces
 from argosnet.core.detection.detectors import NewDeviceDetector
@@ -38,6 +39,20 @@ from argosnet.ui.dashboard_view import DashboardView
 from argosnet.ui.devices_view import DevicesView
 from argosnet.ui.network_map_view import NetworkMapView
 from argosnet.ui.scan_view import ScanView
+
+
+class _VendorDbUpdateThread(QThread):
+    """Télécharge la base OUI en arrière-plan (ne bloque pas l'interface)."""
+
+    finished_ok = Signal(bool)
+
+    def run(self) -> None:  # noqa: D102
+        from argosnet.core.oui import update_vendor_db
+
+        try:
+            self.finished_ok.emit(update_vendor_db())
+        except Exception:  # noqa: BLE001
+            self.finished_ok.emit(False)
 
 
 class MainWindow(QMainWindow):
@@ -83,6 +98,7 @@ class MainWindow(QMainWindow):
         self._worker = AnalysisWorker(self._stats, self._detection)
         self._worker.alerts_ready.connect(self._on_alerts)
         self._worker.start()
+        self.capture_view.set_analysis_worker(self._worker)
 
         # Le flux de paquets part vers le worker d'analyse ; l'effacement remet à zéro
         # statistiques et détecteurs (l'historique des alertes persiste en base).
@@ -108,7 +124,7 @@ class MainWindow(QMainWindow):
 
         # Validation périodique des écritures SQLite (batching, cf. audit R2).
         self._flush_timer = QTimer(self)
-        self._flush_timer.setInterval(3000)
+        self._flush_timer.setInterval(1000)
         self._flush_timer.timeout.connect(self._db.flush)
         self._flush_timer.start()
 
@@ -176,6 +192,8 @@ class MainWindow(QMainWindow):
         clear_alerts.triggered.connect(self._clear_alert_history)
         forget_devices = history_menu.addAction(tr("Oublier les appareils connus"))
         forget_devices.triggered.connect(self._forget_devices)
+        update_oui = history_menu.addAction(tr("Mettre à jour la base constructeurs (OUI)…"))
+        update_oui.triggered.connect(self._update_vendor_db)
 
     def _build_language_menu(self, view_menu) -> None:
         from PySide6.QtGui import QActionGroup
@@ -214,10 +232,34 @@ class MainWindow(QMainWindow):
         self._seed_known_devices()
         self.statusBar().showMessage(tr("Appareils connus oubliés."), 4000)
 
+    def _update_vendor_db(self) -> None:
+        """Télécharge la base OUI après confirmation explicite (requête réseau)."""
+        answer = QMessageBox.question(
+            self, tr("Mettre à jour la base constructeurs"),
+            tr("Télécharger la base des constructeurs depuis https://standards-oui.ieee.org (requête réseau) ?"),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._oui_thread = _VendorDbUpdateThread(self)
+        self._oui_thread.finished_ok.connect(self._on_vendor_db_updated)
+        self._oui_thread.start()
+        self.statusBar().showMessage(tr("Mise à jour de la base constructeurs…"), 4000)
+
+    def _on_vendor_db_updated(self, ok: bool) -> None:
+        if ok:
+            self.statusBar().showMessage(tr("Base constructeurs mise à jour."), 5000)
+        else:
+            QMessageBox.warning(
+                self, tr("Mise à jour impossible"),
+                tr("Échec du téléchargement de la base constructeurs. Vérifiez votre connexion."),
+            )
+
     def closeEvent(self, event) -> None:  # noqa: N802
         from argosnet.core.geoip import close_readers
 
         self.capture_view.stop_capture_if_running()
+        self.capture_view.cancel_pcap_load()
+        self.scan_view.shutdown()
         self._worker.stop()  # arrête le thread d'analyse avant de fermer la base
         self._db.flush()
         self._db.close()
@@ -320,7 +362,7 @@ class MainWindow(QMainWindow):
             (tr("Volume"), format_bytes(s["total_bytes"])),
             (tr("Durée"), f"{s['duration']} s"),
             (tr("Débit moyen"),
-             f"{s['avg_pps']:.1f} {tr('paquets/s')}  ({format_bytes(s['avg_bps'])}/s)"),
+             f"{s['avg_pps']:.1f} {tr('paquets/s')}  ({format_bytes(s['avg_bytes_per_s'])}/s)"),
             (tr("Hôtes distincts"), str(s["distinct_talkers"])),
             (tr("Conversations"), str(s["distinct_conversations"])),
         ]
@@ -343,12 +385,17 @@ class MainWindow(QMainWindow):
         self.capture_view.open_pcap_dialog()
 
     # ---------------------------------------------------------------- détection
-    def _on_alerts(self, alerts: list) -> None:
+    def _on_alerts(self, generation: int, alerts: list) -> None:
         """Alertes remontées par le worker d'analyse (exécuté dans le thread GUI)."""
+        if generation != self._worker.generation:
+            return  # lot dépilé avant « Effacer » : alertes d'une ancienne génération
         if not alerts:
             return
         self.alerts_view.add_alerts(alerts)
         self._db.save_alerts(alerts)
+        criticals = [a for a in alerts if a.severity == Severity.CRITICAL]
+        if criticals:
+            self._db.flush()  # durabilité immédiate des alertes critiques
         # Enregistre les appareils nouvellement découverts (source = MAC).
         new_device = False
         for alert in alerts:
@@ -357,7 +404,6 @@ class MainWindow(QMainWindow):
                 new_device = True
         if new_device:
             self.devices_view.refresh()
-        criticals = [a for a in alerts if a.severity.name == "CRITICAL"]
         if criticals:
             self.statusBar().showMessage(
                 tr("⚠️ {count} alerte(s) critique(s) détectée(s)").format(count=len(criticals)),
@@ -390,7 +436,7 @@ class MainWindow(QMainWindow):
         self.alerts_view.reset()
 
     def _update_alert_tab(self, total: int, critical: int) -> None:
-        label = "Alertes" if total == 0 else f"Alertes ({total})"
+        label = tr("Alertes") if total == 0 else tr("Alertes ({total})").format(total=total)
         self.tabs.setTabText(self._alerts_tab_index, label)
 
     @staticmethod

@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from argosnet.core.geoip import is_external
@@ -131,11 +131,13 @@ class NetworkMapView(QWidget):
         )
 
         # Étiquettes IP (gérées manuellement pour rester compatibles toutes versions).
+        # Couleur tirée de la palette (lisible en thème clair comme sombre).
+        label_color = self._plot.palette().color(QPalette.ColorRole.WindowText)
         for label in self._labels:
             self._plot.removeItem(label)
         self._labels = []
         for ip, (x, y) in zip(nodes, pos):
-            text = pg.TextItem(ip, color="#bbb", anchor=(0.5, 1.4))
+            text = pg.TextItem(ip, color=label_color, anchor=(0.5, 1.4))
             text.setPos(x, y)
             self._plot.addItem(text)
             self._labels.append(text)

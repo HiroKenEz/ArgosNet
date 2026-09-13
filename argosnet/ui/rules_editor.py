@@ -83,7 +83,9 @@ class RulesEditorDialog(QDialog):
         if row >= 0:
             self._table.removeRow(row)
 
-    def _collect(self) -> list[dict]:
+    def _collect(self) -> list[dict] | None:
+        from argosnet.core.detection.detectors import port_text_to_int
+
         rules: list[dict] = []
         for row in range(self._table.rowCount()):
             def cell(col: int) -> str:
@@ -94,8 +96,16 @@ class RulesEditorDialog(QDialog):
             if not (name or port or contains):
                 continue  # ligne vide
             rule: dict = {"name": name or "Règle"}
-            if port.isdigit():
-                rule["dst_port"] = int(port)
+            if port:
+                value = port_text_to_int(port)
+                if value is None:
+                    QMessageBox.warning(
+                        self,
+                        tr("Port invalide"),
+                        tr("Le port de la ligne {row} est invalide : indiquez un entier entre 0 et 65535.").format(row=row + 1),
+                    )
+                    return None
+                rule["dst_port"] = value
             if contains:
                 rule["contains"] = contains
             rule["severity"] = severity.lower() if severity.lower() in SEVERITIES else "warning"
@@ -105,8 +115,11 @@ class RulesEditorDialog(QDialog):
 
     def _save(self) -> None:
         from argosnet.core.detection.detectors import save_rules
+        rules = self._collect()
+        if rules is None:
+            return  # port invalide : message déjà affiché
         try:
-            save_rules(self._collect())
+            save_rules(rules)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Enregistrement impossible"), str(exc))
             return

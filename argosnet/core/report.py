@@ -24,6 +24,18 @@ def _human_bytes(num: float) -> str:
     return f"{num:.1f} Go"
 
 
+def csv_safe(value):
+    """Neutralise une cellule CSV contre l'injection de formule (Excel/LibreOffice).
+
+    Toute cellule texte commençant par ``=``, ``+``, ``-``, ``@``, une tabulation
+    ou un retour chariot est préfixée d'une apostrophe (contenu affiché inchangé,
+    jamais interprété comme formule). Les autres valeurs sont renvoyées telles quelles.
+    """
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r", "\n"):
+        return "'" + value
+    return value
+
+
 def build_html_report(*, summary, top_talkers, conversations, alerts, devices) -> str:
     esc = html.escape
     total = summary.get("total_packets", 0)
@@ -67,7 +79,10 @@ def build_html_report(*, summary, top_talkers, conversations, alerts, devices) -
     out.append("</table>")
 
     out.append(
-        f"<h2>Alertes ({len(alerts)})</h2><table>"
+        f"<h2>Alertes ({len(alerts)})</h2>"
+        "<p class='meta'>Alertes incluses : "
+        f"{len(alerts)} (vue plafonnée à 2 000 — l'historique complet est en base).</p>"
+        "<table>"
         "<tr><th>Heure</th><th>Gravité</th><th>Catégorie</th><th>Source</th><th>Détail</th></tr>"
     )
     for alert in alerts:

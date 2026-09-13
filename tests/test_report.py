@@ -7,7 +7,7 @@ from argosnet.core.stats import Talker
 def test_build_html_report_contains_sections_and_escapes():
     summary = {
         "total_packets": 10, "total_bytes": 2048, "duration": 5,
-        "avg_pps": 2.0, "avg_bps": 400.0,
+        "avg_pps": 2.0, "avg_bytes_per_s": 400.0,
         "protocols": [("TCP", 7), ("DNS", 3)],
         "distinct_talkers": 4, "distinct_conversations": 3,
     }
@@ -27,3 +27,21 @@ def test_build_html_report_contains_sections_and_escapes():
     assert "ARP spoofing" in report
     assert "Mon PC" in report
     assert "&lt;b&gt;" in report          # échappement HTML des champs
+    assert "Alertes (1)" in report        # nombre d'alertes incluses (#40)
+    assert "2 000" in report              # plafond de la vue mentionné (#40)
+
+
+def test_csv_safe_neutralizes_formulas():
+    # Injection de formule via un champ réseau : préfixe apostrophe (#11).
+    from argosnet.core.report import csv_safe
+
+    assert csv_safe("=cmd|'/c calc'!A0") == "'=cmd|'/c calc'!A0"
+    assert csv_safe("+1+1") == "'+1+1"
+    assert csv_safe("-1") == "'-1"
+    assert csv_safe("@evil") == "'@evil"
+    assert csv_safe("\tcmd") == "'\tcmd"
+    assert csv_safe("\ncmd") == "'\ncmd"
+    assert csv_safe("domaine.evil.com") == "domaine.evil.com"
+    assert csv_safe("") == ""
+    assert csv_safe(123) == 123
+    assert csv_safe(None) is None

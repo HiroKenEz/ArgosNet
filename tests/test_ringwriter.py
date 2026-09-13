@@ -1,4 +1,6 @@
 """Tests de la capture en anneau (fichiers .pcap rotatifs)."""
+import os
+
 import pytest
 from fixtures import build_sample_packets
 from scapy.utils import rdpcap
@@ -46,3 +48,21 @@ def test_ring_validates_args(tmp_path):
         RingWriter(str(tmp_path), max_files=0)
     with pytest.raises(ValueError):
         RingWriter(str(tmp_path), max_packets=0)
+
+
+def test_ring_resumes_after_previous_session(tmp_path):
+    # Une nouvelle session reprend après 0002 (pas d'écrasement) et le quota
+    # s'applique aussi aux fichiers existants.
+    rw1 = RingWriter(str(tmp_path), prefix="test", max_files=2, max_packets=2)
+    for pkt in _packets(3):
+        rw1.write(pkt)
+    rw1.close()
+
+    rw2 = RingWriter(str(tmp_path), prefix="test", max_files=2, max_packets=2)
+    assert [os.path.basename(p) for p in rw2.files()] == ["test-0001.pcap", "test-0002.pcap"]
+    for pkt in _packets(4):
+        rw2.write(pkt)
+    rw2.close()
+
+    on_disk = sorted(p.name for p in tmp_path.glob("*.pcap"))
+    assert on_disk == ["test-0003.pcap", "test-0004.pcap"]

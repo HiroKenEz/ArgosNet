@@ -26,6 +26,20 @@ def test_is_external():
     assert is_external("192.168.1.1") is False
 
 
+def test_classify_reserved_before_private():
+    # Non routables : libellé « réservé » (pas « privé »), jamais externes (#29).
+    assert classify_ip("0.0.0.0") == "réservé"
+    assert classify_ip("255.255.255.255") == "réservé"
+    assert classify_ip("192.0.2.1") == "réservé"
+    assert classify_ip("198.51.100.7") == "réservé"
+    assert classify_ip("203.0.113.66") == "réservé"
+    assert is_external("203.0.113.66") is False
+    assert is_external("0.0.0.0") is False
+    # Inchangés : privé et public.
+    assert classify_ip("192.168.1.10") == "privé"
+    assert classify_ip("8.8.8.8") == "public"
+
+
 def test_lookup_without_data_is_empty():
     # Sans base MaxMind (ni geoip2), l'enrichissement est vide et describe() se limite
     # à la catégorie hors-ligne.

@@ -2,7 +2,7 @@
 import hashlib
 import struct
 
-from argosnet.core.ja3 import ja3_from_client_hello
+from argosnet.core.ja3 import client_hello_complete, ja3_from_client_hello
 
 
 def build_client_hello() -> bytes:
@@ -40,3 +40,12 @@ def test_ja3_string_and_hash():
 def test_ja3_rejects_non_client_hello():
     assert ja3_from_client_hello(b"\x17\x03\x03\x00\x10rubbish") is None
     assert ja3_from_client_hello(b"") is None
+
+
+def test_ja3_rejects_truncated_client_hello():
+    # Un ClientHello tronqué annonçait '771,49195-156,,,' au lieu de None (#21).
+    data = build_client_hello()
+    assert ja3_from_client_hello(data[:60]) is None
+    assert ja3_from_client_hello(data[:-10]) is None
+    assert client_hello_complete(data) is True
+    assert client_hello_complete(data[:60]) is False

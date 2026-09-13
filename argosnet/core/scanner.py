@@ -81,18 +81,30 @@ class HostDiscoveryThread(QThread):
             )
             return
 
-        count = 0
-        for _sent, received in answered:
-            ip = received.psrc
-            mac = received.hwsrc
-            host = HostInfo(
-                ip=ip,
-                mac=mac,
-                vendor=lookup_vendor(mac),
-                hostname=resolve_hostname(ip),
-            )
-            self.host_found.emit(host)
-            count += 1
+        # Résolution inverse en parallèle (2 s max par hôte) : un DNS lent ne
+        # bloque pas le scan, et l'hôte est émis même sans nom.
+        from concurrent.futures import ThreadPoolExecutor
+
+        found = [(received.psrc, received.hwsrc) for _sent, received in answered]
+        pool = ThreadPoolExecutor(max_workers=16)
+        try:
+            pending = {pool.submit(resolve_hostname, ip): (ip, mac) for ip, mac in found}
+            count = 0
+            for future, (ip, mac) in pending.items():
+                try:
+                    hostname = future.result(timeout=2)
+                except Exception:  # noqa: BLE001 (timeout compris)
+                    hostname = ""
+                host = HostInfo(
+                    ip=ip,
+                    mac=mac,
+                    vendor=lookup_vendor(mac),
+                    hostname=hostname or "",
+                )
+                self.host_found.emit(host)
+                count += 1
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
         self.finished_scan.emit(count)
 
 

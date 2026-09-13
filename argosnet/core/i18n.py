@@ -32,6 +32,7 @@ _EN: dict[str, str] = {
     "Conversations": "Conversations",
     "Carte": "Map",
     "Alertes": "Alerts",
+    "Alertes ({total})": "Alerts ({total})",
     "{count} interface(s) réseau détectée(s)": "{count} network interface(s) detected",
     # Menus
     "&Fichier": "&File",
@@ -54,6 +55,15 @@ _EN: dict[str, str] = {
     "Résumé de la capture…": "Capture summary…",
     "Effacer l'historique des alertes": "Clear alert history",
     "Oublier les appareils connus": "Forget known devices",
+    "Mettre à jour la base constructeurs (OUI)…": "Update vendor database (OUI)…",
+    "Mettre à jour la base constructeurs": "Update vendor database",
+    "Télécharger la base des constructeurs depuis https://standards-oui.ieee.org (requête réseau) ?":
+        "Download the vendor database from https://standards-oui.ieee.org (network request)?",
+    "Mise à jour de la base constructeurs…": "Updating vendor database…",
+    "Base constructeurs mise à jour.": "Vendor database updated.",
+    "Mise à jour impossible": "Update failed",
+    "Échec du téléchargement de la base constructeurs. Vérifiez votre connexion.":
+        "Failed to download the vendor database. Check your connection.",
     # Messages / dialogues
     "Historique des alertes effacé.": "Alert history cleared.",
     "Appareils connus oubliés.": "Known devices forgotten.",
@@ -66,6 +76,8 @@ _EN: dict[str, str] = {
     # Barre de capture
     "Interface :": "Interface:",
     "Filtre capture (BPF) :": "Capture filter (BPF):",
+    "ex. tcp port 443, host 192.168.1.1…": "e.g. tcp port 443, host 192.168.1.1…",
+    "ex. dns, ip.addr==192.168.1.1, tcp.port==443…": "e.g. dns, ip.addr==192.168.1.1, tcp.port==443…",
     "Anneau": "Ring",
     "▶ Démarrer": "▶ Start",
     "■ Arrêter": "■ Stop",
@@ -78,6 +90,7 @@ _EN: dict[str, str] = {
     "Suivant": "Next",
     # Onglet Scan
     "Cible :": "Target:",
+    "ex. 192.168.1.0/24": "e.g. 192.168.1.0/24",
     "Découvrir les hôtes": "Discover hosts",
     "Scanner les ports de l'hôte sélectionné": "Scan ports of selected host",
     "Prêt.": "Ready.",
@@ -173,6 +186,16 @@ _EN: dict[str, str] = {
         "Scan of {ip} complete: {count} open port(s).",
     "Échec du scan.": "Scan failed.",
     "Scan impossible": "Scan failed",
+    "Cible invalide": "Invalid target",
+    "Cible invalide : utilisez une adresse IPv4 ou un sous-réseau CIDR (ex. 192.168.1.0/24).":
+        "Invalid target: use an IPv4 address or CIDR subnet (e.g. 192.168.1.0/24).",
+    "Cible refusée : 0.0.0.0, loopback, multicast et préfixes < /16 sont interdits.":
+        "Target refused: 0.0.0.0, loopback, multicast and prefixes < /16 are forbidden.",
+    "Confirmer le scan": "Confirm scan",
+    "Scanner {count} adresses ({network}) ? Vérifiez que vous êtes autorisé à scanner ce réseau.":
+        "Scan {count} addresses ({network})? Make sure you are authorized to scan this network.",
+    "Scan périodique ignoré : {reason}": "Periodic scan skipped: {reason}",
+    "confirmation requise pour {network}": "confirmation required for {network}",
     # Éditeur de règles
     "Règles de détection (mini-IDS)": "Detection rules (mini-IDS)",
     "Chaque règle peut cibler un <b>port de destination</b> et/ou une "
@@ -190,6 +213,9 @@ _EN: dict[str, str] = {
     "Enregistrer": "Save",
     "Annuler": "Cancel",
     "Enregistrement impossible": "Save failed",
+    "Port invalide": "Invalid port",
+    "Le port de la ligne {row} est invalide : indiquez un entier entre 0 et 65535.":
+        "Invalid port on row {row}: enter an integer between 0 and 65535.",
     # Éditeur de couleurs
     "Couleurs des protocoles": "Protocol colors",
     "Cliquez une couleur pour la modifier.": "Click a color to change it.",
@@ -233,6 +259,24 @@ _EN: dict[str, str] = {
     "{count} paquet(s)": "{count} packet(s)",
     "{shown} / {total} paquet(s)": "{shown} / {total} packet(s)",
     "   ⚠ {count} perdu(s)": "   ⚠ {count} dropped",
+    "   ⚠ {count} non analysé(s)": "   ⚠ {count} unanalyzed",
+    "Capture en cours": "Capture in progress",
+    "Arrêtez la capture avant d'ouvrir un fichier.":
+        "Stop the capture before opening a file.",
+    "Chargement en cours": "Loading in progress",
+    "Un fichier est déjà en cours de chargement.":
+        "A file is already loading.",
+    "Fichier volumineux": "Large file",
+    "Ce fichier pèse {size} : le chargement peut prendre un moment. Continuer ?":
+        "This file weighs {size}: loading may take a while. Continue?",
+    "Limite d'affichage atteinte": "Display limit reached",
+    "Capture arrêtée : {max} paquets affichés (limite). Utilisez la capture en anneau pour une surveillance continue.":
+        "Capture stopped: {max} packets displayed (limit). Use ring capture for continuous monitoring.",
+    "Fichier tronqué": "Truncated file",
+    "Fichier tronqué aux {max} premiers paquets (limite d'affichage).":
+        "File truncated to the first {max} packets (display limit).",
+    "La vue affiche déjà {max} paquets (limite). Effacez la capture avant d'ouvrir un fichier.":
+        "The view already shows {max} packets (limit). Clear the capture before opening a file.",
     "texte dans source, destination, protocole ou info…":
         "text in source, destination, protocol or info…",
     "Capture en anneau impossible": "Ring capture failed",
@@ -257,6 +301,11 @@ _EN: dict[str, str] = {
     "Aucun paquet à exporter.": "No packet to export.",
     "Enregistrer la capture": "Save capture",
     "Captures (*.pcap)": "Captures (*.pcap)",
+    "Exporter la capture": "Export capture",
+    "Un filtre d'affichage est actif : exporter seulement les paquets affichés ?":
+        "A display filter is active: export only the displayed packets?",
+    "Paquets affichés": "Displayed packets",
+    "Toute la capture": "Entire capture",
     "Écriture impossible": "Write failed",
     "Échec de l'enregistrement :\n{error}": "Save failed:\n{error}",
     "Filtrer la source  {addr}": "Filter source  {addr}",
@@ -275,6 +324,9 @@ _EN: dict[str, str] = {
     # Follow Stream
     "Suivre le flux TCP — {a} ↔ {b}": "Follow TCP stream — {a} ↔ {b}",
     "octets": "bytes",
+    "(tronqué)": "(truncated)",
+    "Sélectionnez un paquet pour afficher son contenu hexadécimal.":
+        "Select a packet to show its hexadecimal dump.",
     "Copier": "Copy",
     "Fermer": "Close",
     # Environnement (démarrage)

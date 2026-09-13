@@ -38,11 +38,38 @@ class RingWriter:
         self.prefix = prefix
         self.max_files = max_files
         self.max_packets = max_packets
-        self._files: deque[str] = deque()
         self._writer: Any = None
-        self._index = 0
         self._count = 0
         os.makedirs(directory, exist_ok=True)
+        # Reprend après les fichiers des sessions précédentes : l'index ne repart
+        # pas de 0001 (pas d'écrasement) et le quota s'applique aussi à eux.
+        self._files: deque[str] = deque(self._existing_files())
+        self._index = self._max_existing_index()
+
+    def _existing_files(self) -> list[str]:
+        """Fichiers ``{prefix}-NNNN.pcap`` déjà présents, triés (sessions précédentes)."""
+        try:
+            names = sorted(os.listdir(self.directory))
+        except OSError:
+            return []
+        found = []
+        for name in names:
+            if not (name.startswith(f"{self.prefix}-") and name.endswith(".pcap")):
+                continue
+            stem = name[len(self.prefix) + 1:-len(".pcap")]
+            if len(stem) == 4 and stem.isdigit():
+                found.append(os.path.join(self.directory, name))
+        return found
+
+    def _max_existing_index(self) -> int:
+        """Plus grand NNNN existant (0 si aucun) : la rotation reprend après."""
+        best = 0
+        for path in self._files:
+            try:
+                best = max(best, int(os.path.basename(path)[len(self.prefix) + 1:-len(".pcap")]))
+            except ValueError:
+                continue
+        return best
 
     def _rotate(self) -> None:
         self._close_writer()
@@ -113,6 +140,11 @@ class CaptureController:
         from scapy.sendrecv import AsyncSniffer
 
         self._ring = ring
+        self.reset_dropped()
+        with self._lock:
+            # Le tampon ne doit jamais survivre d'une capture à l'autre : sinon
+            # des paquets de la session précédente réapparaîtraient dans la vue.
+            self._buffer.clear()
         self._sniffer = AsyncSniffer(
             iface=iface,
             filter=(bpf_filter or None),
@@ -159,13 +191,28 @@ class CaptureController:
                 pass
 
     def dropped_count(self) -> int:
-        return self._dropped
+        with self._lock:
+            return self._dropped
 
-    def drain(self) -> list[Any]:
-        """Récupère et vide les paquets accumulés depuis le dernier appel."""
+    def reset_dropped(self) -> None:
+        """Remet à zéro le compteur de paquets perdus (début de capture, effacement)."""
+        with self._lock:
+            self._dropped = 0
+
+    def drain(self, max_items: int | None = None) -> list[Any]:
+        """Récupère les paquets accumulés depuis le dernier appel.
+
+        Au plus ``max_items`` paquets (``None`` = tout) : borne le travail de
+        dissection fait dans le thread graphique à chaque tick. Le reste attend
+        le tick suivant ; si le débit dépasse durablement, le tampon se remplit
+        et les pertes sont comptées et visibles.
+        """
         with self._lock:
             if not self._buffer:
                 return []
-            items = list(self._buffer)
-            self._buffer.clear()
+            if max_items is None or len(self._buffer) <= max_items:
+                items = list(self._buffer)
+                self._buffer.clear()
+            else:
+                items = [self._buffer.popleft() for _ in range(max_items)]
         return items

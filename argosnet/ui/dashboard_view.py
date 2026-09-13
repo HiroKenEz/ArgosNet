@@ -141,7 +141,7 @@ class DashboardView(QWidget):
         self._tile_bytes.set_value(format_bytes(self._stats.total_bytes))
         self._tile_protos.set_value(str(self._stats.distinct_protocols()))
 
-        seconds, pps, _kbps = self._stats.throughput_series()
+        seconds, pps, _kib_s = self._stats.throughput_series()
         if seconds:
             self._tput_curve.setData(seconds, pps)
             duration = max(1, seconds[-1] + 1)

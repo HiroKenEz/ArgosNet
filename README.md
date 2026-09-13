@@ -167,3 +167,11 @@ et l'**ASN** :
 
 Sans ces éléments, seule la classification hors-ligne est affichée — **aucune requête
 réseau n'est jamais effectuée**.
+
+## Base constructeurs (OUI) — mise à jour explicite
+
+La résolution du constructeur depuis l'adresse MAC fonctionne hors-ligne avec la base
+locale (si présente). Si elle est absente, l'application affiche simplement une chaîne
+vide — **aucun téléchargement implicite** : utilisez le menu
+**Historique → Mettre à jour la base constructeurs (OUI)…** pour télécharger
+explicitement la base depuis `standards-oui.ieee.org`.

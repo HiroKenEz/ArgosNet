@@ -23,3 +23,29 @@ def test_lookup_never_raises():
     # lookup_vendor renvoie toujours une chaîne sans lever d'exception.
     result = oui.lookup_vendor("aa:bb:cc:dd:ee:ff")
     assert isinstance(result, str)
+
+
+def test_lookup_without_cache_makes_no_network_call(monkeypatch):
+    # Sans base locale : "" immédiat, sans appel à update_vendors (#13).
+    import sys
+    from types import SimpleNamespace
+
+    calls: list = []
+
+    class FakeLookup:
+        def find_vendors_list(self):
+            return None  # pas de base locale
+
+        def update_vendors(self):
+            calls.append("update")
+            raise AssertionError("aucun accès réseau implicite")
+
+        def lookup(self, mac):
+            calls.append("lookup")
+            return "X"
+
+    monkeypatch.setitem(
+        sys.modules, "mac_vendor_lookup", SimpleNamespace(MacLookup=FakeLookup)
+    )
+    assert oui.lookup_vendor("aa:bb:cc:dd:ee:ff") == ""
+    assert calls == []

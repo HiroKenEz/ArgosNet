@@ -59,9 +59,11 @@ def main() -> int:
     # Avertissements non bloquants sur l'environnement (Npcap, privilèges).
     warnings = environment_warnings()
     if warnings:
+        # Affectation en deux temps : pas de backslash dans une f-string (Python 3.11).
+        env_title = tr("vérification de l'environnement")
         QMessageBox.warning(
             window,
-            f"{__app_name__} — {tr(\"vérification de l'environnement\")}",
+            f"{__app_name__} — {env_title}",
             "\n\n".join(warnings),
         )
 

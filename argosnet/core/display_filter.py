@@ -54,12 +54,15 @@ def _compile_single(term: str) -> Predicate:
         return field_pred
 
     # Terme nu : protocole exact, ou sous-chaîne dans les adresses / l'info.
+    # « icmp » couvre aussi « icmpv6 » (ping4 comme ping6).
     needle = term.lower()
 
     def bare_pred(record, needle=needle):
         s = record.summary
+        proto = s.protocol.lower()
         return (
-            needle == s.protocol.lower()
+            needle == proto
+            or (needle == "icmp" and proto == "icmpv6")
             or needle in s.src.lower()
             or needle in s.dst.lower()
             or needle in s.info.lower()

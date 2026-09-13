@@ -1,6 +1,8 @@
 """Boîte de dialogue « Suivre le flux TCP » : affiche le flux réassemblé, coloré par sens."""
 from __future__ import annotations
 
+import html
+
 from PySide6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,9 +32,10 @@ class FollowStreamDialog(QDialog):
         layout = QVBoxLayout(self)
 
         legend = QLabel(
-            f"<span style='color:{CLIENT_COLOR}'>■</span> {stream.endpoint_a} → {stream.endpoint_b}"
-            f"    <span style='color:{SERVER_COLOR}'>■</span> {stream.endpoint_b} → {stream.endpoint_a}"
+            f"<span style='color:{CLIENT_COLOR}'>■</span> {html.escape(stream.endpoint_a)} → {html.escape(stream.endpoint_b)}"
+            f"    <span style='color:{SERVER_COLOR}'>■</span> {html.escape(stream.endpoint_b)} → {html.escape(stream.endpoint_a)}"
             f"    ({stream.total_bytes()} {tr('octets')})"
+            + (f"  {tr('(tronqué)')}" if getattr(stream, "truncated", False) else "")
         )
         layout.addWidget(legend)
 
