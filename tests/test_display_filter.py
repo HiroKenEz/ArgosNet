@@ -46,3 +46,16 @@ def test_negation():
     total = len(_records())
     tcp = sum(1 for r in _records() if r.summary.protocol == "TCP")
     assert _count("proto!=tcp") == total - tcp
+
+
+def test_icmp_matches_icmpv6():
+    # Le filtre nu « icmp » trouve aussi le ping6 (#30).
+    from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
+    from scapy.layers.l2 import Ether
+
+    pkt = Ether(src="02:00:00:00:00:01") / IPv6(src="fe80::2", dst="fe80::1") / ICMPv6EchoRequest()
+    record = SimpleNamespace(summary=summarize(pkt), packet=pkt)
+    assert record.summary.protocol == "ICMPv6"
+    assert compile_filter("icmp")(record) is True
+    assert compile_filter("icmpv6")(record) is True
+    assert compile_filter("tcp")(record) is False

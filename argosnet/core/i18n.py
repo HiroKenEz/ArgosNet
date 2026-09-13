@@ -278,6 +278,7 @@ _EN: dict[str, str] = {
     # Follow Stream
     "Suivre le flux TCP — {a} ↔ {b}": "Follow TCP stream — {a} ↔ {b}",
     "octets": "bytes",
+    "(tronqué)": "(truncated)",
     "Copier": "Copy",
     "Fermer": "Close",
     # Environnement (démarrage)

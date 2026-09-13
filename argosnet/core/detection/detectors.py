@@ -784,6 +784,12 @@ class PortKnockDetector(Detector):
 BUNDLED_JA3_BLOCKLIST = os.path.join(os.path.dirname(__file__), "ja3_blocklist.txt")
 USER_JA3_BLOCKLIST = os.path.join(os.path.expanduser("~"), ".argosnet", "ja3_blocklist.txt")
 
+# Mini-réassemblage des ClientHello fragmentés (Ja3BlocklistDetector) : bornes
+# anti-exhaustion (un flux piégé ne doit pas gonfler la mémoire).
+JA3_REASSEMBLY_MAX_FLOW_BYTES = 16 * 1024
+JA3_REASSEMBLY_MAX_FLOWS = 1_000
+JA3_REASSEMBLY_EXPIRE_SECONDS = 10.0
+
 
 def load_ja3_blocklist(paths: list[str] | None = None) -> set[str]:
     """Charge une liste noire d'empreintes JA3 (fichier livré + fichier utilisateur)."""
@@ -812,6 +818,7 @@ class Ja3BlocklistDetector(Detector):
     def __init__(self, blocklist: set[str] | None = None) -> None:
         self.blocklist = blocklist if blocklist is not None else load_ja3_blocklist()
         self._alerted: set[tuple[str, str]] = set()
+        self._partial: dict[tuple, dict] = {}  # flux -> {"buf": bytearray, "first": float}
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         if not self.blocklist or not pkt.haslayer(Raw):
@@ -820,10 +827,18 @@ class Ja3BlocklistDetector(Detector):
             payload = bytes(pkt.getlayer(Raw).load)
         except Exception:
             return []
-        if len(payload) < 6 or payload[0] != 0x16:  # enregistrement TLS handshake
+        if len(payload) < 1:
             return []
-        from argosnet.core.ja3 import ja3_from_client_hello
+        from argosnet.core.ja3 import client_hello_complete, ja3_from_client_hello
 
+        now = _pkt_time(pkt)
+        self._expire_partials(now)
+        if not (len(payload) >= 6 and payload[0] == 0x16 and client_hello_complete(payload)):
+            # Hello incomplet ou suite d'un hello fragmenté : on le complète avec
+            # les segments du même flux avant de calculer le JA3.
+            payload = self._accumulate(pkt, payload, now)
+            if payload is None:
+                return []
         result = ja3_from_client_hello(payload)
         if not result:
             return []
@@ -852,6 +867,54 @@ class Ja3BlocklistDetector(Detector):
 
     def reset(self) -> None:
         self._alerted = set()
+        self._partial = {}
+
+    def _flow_key(self, pkt: Any) -> tuple | None:
+        """4-uplet (sens client) d'un segment TCP, ou None."""
+        if not pkt.haslayer(TCP):
+            return None
+        layer = _ip_layer(pkt)
+        if layer is None:
+            return None
+        tcp = pkt.getlayer(TCP)
+        return (layer.src, layer.dst, int(tcp.sport), int(tcp.dport))
+
+    def _accumulate(self, pkt: Any, payload: bytes, now: float) -> bytes | None:
+        """Bufferise un fragment de ClientHello ; retourne le hello complété ou None."""
+        from argosnet.core.ja3 import client_hello_complete, ja3_from_client_hello
+
+        key = self._flow_key(pkt)
+        if key is None:
+            return None
+        starts_hello = len(payload) >= 6 and payload[0] == 0x16
+        entry = self._partial.get(key)
+        if entry is None:
+            if not starts_hello:
+                return None  # suite d'un flux qu'on ne suit pas
+            if len(self._partial) >= JA3_REASSEMBLY_MAX_FLOWS:
+                return None
+            entry = {"buf": bytearray(), "first": now}
+            self._partial[key] = entry
+        if len(entry["buf"]) + len(payload) > JA3_REASSEMBLY_MAX_FLOW_BYTES:
+            self._partial.pop(key, None)
+            return None
+        entry["buf"] += payload
+        combined = bytes(entry["buf"])
+        if client_hello_complete(combined) and ja3_from_client_hello(combined):
+            self._partial.pop(key, None)
+            return combined
+        return None
+
+    def _expire_partials(self, now: float) -> None:
+        """Purge les réassemblages inachevés trop anciens."""
+        if not self._partial:
+            return
+        stale = [
+            key for key, entry in self._partial.items()
+            if now - entry["first"] > JA3_REASSEMBLY_EXPIRE_SECONDS
+        ]
+        for key in stale:
+            del self._partial[key]
 
 
 class BaselineAnomalyDetector(Detector):

@@ -449,3 +449,29 @@ def test_port_text_to_int():
     assert port_text_to_int("abc") is None
     assert port_text_to_int("99999") is None
     assert port_text_to_int("-1") is None
+
+
+def test_ja3_fragmented_client_hello_reassembled():
+    # ClientHello coupé en 2 segments : alerte quand le JA3 complet est blocklisté (#31).
+    from test_ja3 import build_client_hello
+
+    from argosnet.core.ja3 import ja3_from_client_hello
+
+    data = build_client_hello()
+    _, digest = ja3_from_client_hello(data)
+    assert digest is not None
+    det = Ja3BlocklistDetector(blocklist={digest})
+    cut = len(data) // 2
+
+    def seg(payload, t):
+        pkt = (
+            Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="1.2.3.4")
+            / TCP(sport=44000, dport=443, flags="PA") / Raw(payload)
+        )
+        pkt.time = t
+        return pkt
+
+    assert det.inspect(1, seg(data[:cut], 1000.0)) == []
+    alerts = det.inspect(2, seg(data[cut:], 1000.1))
+    assert len(alerts) == 1
+    assert alerts[0].category == "Empreinte JA3 malveillante"

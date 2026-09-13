@@ -99,3 +99,49 @@ def test_dhcp_decoder():
     s = summarize(pkt)
     assert s.protocol == "DHCP"
     assert "Discover" in s.info
+
+
+def test_icmpv6_protocol_and_info():
+    # Ping6 classé ICMPv6 (IPv6 avant, #30).
+    from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
+
+    pkt = (
+        Ether(src="02:00:00:00:00:01")
+        / IPv6(src="fe80::2", dst="fe80::1")
+        / ICMPv6EchoRequest(id=7, seq=3)
+    )
+    s = summarize(pkt)
+    assert s.protocol == "ICMPv6"
+    assert "type=128" in s.info
+    assert "id=7" in s.info
+
+
+def test_tls_fragmented_hello_info():
+    # ClientHello incomplet : pas de SNI/JA3 faux, mention fragmenté (#31).
+    from test_ja3 import build_client_hello
+
+    data = build_client_hello()
+    pkt = (
+        Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="1.2.3.4")
+        / TCP(sport=50000, dport=443, flags="PA") / Raw(data[:60])
+    )
+    s = summarize(pkt)
+    assert s.protocol == "TLS"
+    assert "fragmenté" in s.info
+    assert "JA3" not in s.info
+
+
+def test_hexdump_unbuildable_returns_empty(monkeypatch):
+    # bytes(pkt) qui lève aussi : hexdump renvoie "" sans lever (#16).
+    import scapy.utils
+
+    monkeypatch.setattr(
+        scapy.utils, "hexdump",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    class Bad:
+        def __bytes__(self):
+            raise ValueError("boom")
+
+    assert hexdump(Bad()) == ""

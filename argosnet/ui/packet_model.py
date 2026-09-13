@@ -28,6 +28,7 @@ DEFAULT_PROTO_COLORS: dict[str, str] = {
     "DHCP": "#e6f7d0",
     "ARP": "#fbf3d0",
     "ICMP": "#ffe0e0",
+    "ICMPv6": "#ffe0e0",
     "HTTP": "#d5f0d5",
     "TLS": "#efe0ff",
     "IPv6": "#eef0f2",
