@@ -36,3 +36,28 @@ def test_reset_dropped():
     assert controller.dropped_count() == 3
     controller.reset_dropped()
     assert controller.dropped_count() == 0
+
+
+def test_start_clears_buffer_and_resets_dropped(monkeypatch):
+    # Une nouvelle capture repart d'un tampon vide (#3, relecture PR #42).
+    import scapy.sendrecv
+
+    class FakeSniffer:
+        def __init__(self, *args, **kwargs):
+            self.running = False
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(scapy.sendrecv, "AsyncSniffer", FakeSniffer)
+    controller = CaptureController(max_buffer=2)
+    _feed(controller, 5)
+    controller.start()
+    try:
+        assert controller.drain() == []
+        assert controller.dropped_count() == 0
+    finally:
+        controller.stop()

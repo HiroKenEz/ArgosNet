@@ -194,6 +194,8 @@ _EN: dict[str, str] = {
     "Confirmer le scan": "Confirm scan",
     "Scanner {count} adresses ({network}) ? Vérifiez que vous êtes autorisé à scanner ce réseau.":
         "Scan {count} addresses ({network})? Make sure you are authorized to scan this network.",
+    "Scan périodique ignoré : {reason}": "Periodic scan skipped: {reason}",
+    "confirmation requise pour {network}": "confirmation required for {network}",
     # Éditeur de règles
     "Règles de détection (mini-IDS)": "Detection rules (mini-IDS)",
     "Chaque règle peut cibler un <b>port de destination</b> et/ou une "
@@ -273,6 +275,8 @@ _EN: dict[str, str] = {
     "Fichier tronqué": "Truncated file",
     "Fichier tronqué aux {max} premiers paquets (limite d'affichage).":
         "File truncated to the first {max} packets (display limit).",
+    "La vue affiche déjà {max} paquets (limite). Effacez la capture avant d'ouvrir un fichier.":
+        "The view already shows {max} packets (limit). Clear the capture before opening a file.",
     "texte dans source, destination, protocole ou info…":
         "text in source, destination, protocol or info…",
     "Capture en anneau impossible": "Ring capture failed",

@@ -87,3 +87,34 @@ def test_follow_truncated_when_over_caps(monkeypatch):
     assert stream is not None
     assert stream.truncated is True
     assert len(stream.segments) <= 3
+
+
+def test_follow_late_earlier_seq_not_dropped():
+    # WORLD seq=1005 à t=1.0 puis HELLO seq=1000 à t=1.5 : les deux conservés,
+    # dans l'ordre des seq (relecture PR #42 : next_seq = plus petite seq).
+    world = _seg_seq(50000, 80, "192.168.1.10", "1.2.3.4", 1005, b"WORLD", 1.0)
+    hello = _seg_seq(50000, 80, "192.168.1.10", "1.2.3.4", 1000, b"HELLO", 1.5)
+    stream = follow_tcp_stream([world, hello], world)
+    assert stream is not None
+    assert [(d, b) for d, b in stream.segments] == [(True, b"HELLO"), (True, b"WORLD")]
+
+
+def test_follow_syn_sets_next_seq():
+    # SYN seq=5000 : un segment périmé (seq=4000) est ignoré, la suite gardée.
+    from scapy.layers.inet import IP as _IP
+    from scapy.layers.inet import TCP as _TCP
+    from scapy.layers.l2 import Ether as _Ether
+
+    def _syn(t):
+        pkt = _Ether(src="02:00:00:00:00:01") / _IP(src="192.168.1.10", dst="1.2.3.4") / _TCP(
+            sport=50000, dport=80, flags="S", seq=5000
+        )
+        pkt.time = t
+        return pkt
+
+    syn = _syn(0.5)
+    stale = _seg_seq(50000, 80, "192.168.1.10", "1.2.3.4", 4000, b"STALE", 1.0)
+    late = _seg_seq(50000, 80, "192.168.1.10", "1.2.3.4", 6000, b"LATE", 2.0)
+    stream = follow_tcp_stream([syn, stale, late], syn)
+    assert stream is not None
+    assert [(d, b) for d, b in stream.segments] == [(True, b"LATE")]

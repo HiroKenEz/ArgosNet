@@ -19,6 +19,7 @@ MAX_STREAM_BYTES = 20 * 1024 * 1024  # octets de charge utile au maximum
 
 _MOD = 2 ** 32
 _HALF_MOD = 2 ** 31
+_TCP_SYN = 0x02
 
 
 def _seq_before(a: int, b: int) -> bool:
@@ -29,6 +30,15 @@ def _seq_before(a: int, b: int) -> bool:
 def _seq_le(a: int, b: int) -> bool:
     """``a`` avant ou égal à ``b``, en arithmétique modulo 2³²."""
     return a == b or _seq_before(a, b)
+
+
+def _mod_min(seqs: list[int]) -> int:
+    """Plus petite séquence (comparaison modulo 2³²), pour des seq proches."""
+    best = seqs[0]
+    for seq in seqs[1:]:
+        if _seq_before(seq, best):
+            best = seq
+    return best
 
 
 @dataclass
@@ -45,8 +55,8 @@ class TcpStream:
 class _DirectionBuffer:
     """Réassemble un sens du flux dans l'ordre des numéros de séquence."""
 
-    def __init__(self) -> None:
-        self.next_seq: int | None = None
+    def __init__(self, next_seq: int | None = None) -> None:
+        self.next_seq = next_seq
         self.pending: dict[int, bytes] = {}
 
     def feed(self, seq: int, data: bytes) -> list[bytes]:
@@ -128,10 +138,12 @@ def follow_tcp_stream(packets, ref) -> TcpStream | None:
     key = frozenset((a, b))
 
     collected: list[tuple[float, int, int, bool, bytes]] = []  # (temps, ordre, seq, a→b, données)
+    seqs: dict[bool, list[int]] = {True: [], False: []}
+    first_syn: dict[bool, tuple[float, int]] = {}  # sens -> (temps, seq du 1er SYN)
     total = 0
     truncated = False
     for order, pkt in enumerate(packets):
-        if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
+        if not pkt.haslayer(TCP):
             continue
         addrs = _net_addrs(pkt)
         if addrs is None:
@@ -140,6 +152,15 @@ def follow_tcp_stream(packets, ref) -> TcpStream | None:
         src = (addrs[0], int(tcp.sport))
         dst = (addrs[1], int(tcp.dport))
         if frozenset((src, dst)) != key:
+            continue
+        direction = src == a
+        moment = float(getattr(pkt, "time", 0.0) or 0.0)
+        flags = int(tcp.flags)
+        if flags & _TCP_SYN:
+            seq = int(tcp.seq) % _MOD
+            if direction not in first_syn or moment < first_syn[direction][0]:
+                first_syn[direction] = (moment, seq)
+        if not pkt.haslayer(Raw):
             continue
         try:
             data = bytes(pkt.getlayer(Raw).load)
@@ -150,13 +171,25 @@ def follow_tcp_stream(packets, ref) -> TcpStream | None:
         if len(collected) >= MAX_SEGMENTS or total >= MAX_STREAM_BYTES:
             truncated = True
             break
-        collected.append(
-            (float(getattr(pkt, "time", 0.0) or 0.0), order, int(tcp.seq) % _MOD, src == a, data)
-        )
+        # Un SYN consomme un numéro de séquence : sa charge utile démarre à seq+1.
+        eff_seq = (int(tcp.seq) + (1 if flags & _TCP_SYN else 0)) % _MOD
+        collected.append((moment, order, eff_seq, direction, data))
+        seqs[direction].append(eff_seq)
         total += len(data)
 
     collected.sort(key=lambda item: (item[0], item[1]))
-    buffers = {True: _DirectionBuffer(), False: _DirectionBuffer()}
+    # Point de départ par sens : seq+1 du premier SYN si présent, sinon la plus
+    # petite seq collectée (comparaison modulo 2³²). Un segment de seq inférieure
+    # arrivé après le premier n'est ainsi plus jeté comme une retransmission.
+    buffers = {}
+    for direction in (True, False):
+        if direction in first_syn:
+            initial: int | None = (first_syn[direction][1] + 1) % _MOD
+        elif seqs[direction]:
+            initial = _mod_min(seqs[direction])
+        else:
+            initial = None
+        buffers[direction] = _DirectionBuffer(initial)
     segments: list[tuple[bool, bytes]] = []
     for _, _, seq, a_to_b, data in collected:
         for chunk in buffers[a_to_b].feed(seq, data):

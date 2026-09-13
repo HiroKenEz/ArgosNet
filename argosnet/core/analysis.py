@@ -116,6 +116,10 @@ class AnalysisWorker(QThread):
 
     def _process(self, generation: int, start_number: int, packets: list[Any]) -> None:
         with self._process_lock:
+            with self._cond:
+                current = self._generation
+            if generation != current:
+                return  # lot dépilé avant « Effacer » : abandonné avant tout ajout
             try:
                 self._stats.add_packets(packets)
                 with self._detection_lock:

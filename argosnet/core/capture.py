@@ -141,6 +141,10 @@ class CaptureController:
 
         self._ring = ring
         self.reset_dropped()
+        with self._lock:
+            # Le tampon ne doit jamais survivre d'une capture à l'autre : sinon
+            # des paquets de la session précédente réapparaîtraient dans la vue.
+            self._buffer.clear()
         self._sniffer = AsyncSniffer(
             iface=iface,
             filter=(bpf_filter or None),

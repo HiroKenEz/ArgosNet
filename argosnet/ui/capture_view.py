@@ -341,17 +341,20 @@ class CaptureView(QWidget):
     def _stop_capture(self) -> None:
         self._controller.stop()
         self._timer.stop()
-        self._drain()  # récupère les derniers paquets en attente
+        # Vide le tampon jusqu'au bout (plusieurs ticks si besoin) : sinon les
+        # paquets restants réapparaîtraient à la capture suivante.
+        while self._drain():
+            pass
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._iface_combo.setEnabled(True)
         self._bpf_edit.setEnabled(True)
         self._ring_check.setEnabled(True)
 
-    def _drain(self) -> None:
+    def _drain(self) -> int:
         packets = self._controller.drain(DRAIN_MAX_ITEMS)
         if not packets:
-            return
+            return 0
         base = self._model.next_number()
         records = [make_record(base + i, pkt) for i, pkt in enumerate(packets)]
         self._model.append_records(records)
@@ -366,6 +369,7 @@ class CaptureView(QWidget):
                 tr("Limite d'affichage atteinte"),
                 tr("Capture arrêtée : {max} paquets affichés (limite). Utilisez la capture en anneau pour une surveillance continue.").format(max=MAX_PACKETS_IN_VIEW),
             )
+        return len(packets)
 
     # ---------------------------------------------------------- import/export
     def open_pcap_dialog(self) -> None:
@@ -406,7 +410,14 @@ class CaptureView(QWidget):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        self._loader = PcapLoader(path, self._model.next_number())
+        remaining = MAX_PACKETS_IN_VIEW - self._model.rowCount()
+        if remaining <= 0:
+            QMessageBox.information(
+                self, tr("Limite d'affichage atteinte"),
+                tr("La vue affiche déjà {max} paquets (limite). Effacez la capture avant d'ouvrir un fichier.").format(max=MAX_PACKETS_IN_VIEW),
+            )
+            return
+        self._loader = PcapLoader(path, self._model.next_number(), max_packets=remaining)
         self._progress = QProgressDialog(
             tr("Lecture de la capture…"), tr("Annuler"), 0, 0, self)
         self._progress.setWindowTitle(tr("Chargement"))
@@ -440,6 +451,7 @@ class CaptureView(QWidget):
         if hasattr(self, "_progress"):
             self._progress.close()
         loader = self._loader
+        self._loader = None  # libéré : un 2e load/cancel ne touche plus un objet C++ supprimé
         if loader is not None:
             loader.deleteLater()
             if loader.hit_cap:

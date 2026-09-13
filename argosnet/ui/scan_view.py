@@ -200,8 +200,23 @@ class ScanView(QWidget):
         # Ne lance pas de nouveau balayage si l'un est déjà en cours (anti-chevauchement).
         if self._discovery is not None and self._discovery.isRunning():
             return
+        text = self._target_edit.text().strip()
         # Cible absente : on saute ce tour sans ouvrir de dialogue modal.
-        if not self._target_edit.text().strip():
+        if not text:
+            return
+        from argosnet.core.scan_target import check_target
+
+        network, error, need_confirm = check_target(text)
+        if error is not None or need_confirm:
+            # Pas de popup en périodique : on saute ce tour en expliquant pourquoi.
+            if error is not None:
+                reason = tr(error)
+            else:
+                assert network is not None
+                reason = tr("confirmation requise pour {network}").format(network=str(network))
+            self._status.setText(
+                tr("Scan périodique ignoré : {reason}").format(reason=reason)
+            )
             return
         self._start_discovery()
 
