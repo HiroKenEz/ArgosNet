@@ -136,13 +136,22 @@ class ScanView(QWidget):
     def _start_discovery(self) -> None:
         if self._discovery is not None and self._discovery.isRunning():
             return  # déjà en cours (double-clic, chevauchement périodique)
-        target = self._target_edit.text().strip()
-        if not target:
-            QMessageBox.information(
-                self, tr("Cible manquante"),
-                tr("Indiquez un sous-réseau (ex. 192.168.1.0/24)."),
-            )
+        from argosnet.core.scan_target import check_target
+
+        network, error, need_confirm = check_target(self._target_edit.text())
+        if error is not None:
+            QMessageBox.information(self, tr("Cible invalide"), tr(error))
             return
+        assert network is not None
+        if need_confirm:
+            answer = QMessageBox.question(
+                self, tr("Confirmer le scan"),
+                tr("Scanner {count} adresses ({network}) ? Vérifiez que vous êtes autorisé à scanner ce réseau.").format(
+                    count=network.num_addresses, network=str(network)),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        target = str(network)
         self._table.setRowCount(0)
         self._row_by_ip.clear()
         self._discover_btn.setEnabled(False)

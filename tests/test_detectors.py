@@ -73,7 +73,8 @@ def test_feed_with_explicit_start_number():
 
 
 def test_dns_tunnel_detected():
-    label = os.urandom(24).hex()  # 48 caractères hexadécimaux, haute entropie
+    # Label fixe à haute entropie (os.urandom rendait ce test flaky ~1 %).
+    label = "9f8e7d6c5b4a39281706a1b2c3d4e5f60718293a4b6c"
     pkt = (
         Ether(src="02:00:00:00:00:01") / IP(src="192.168.1.10", dst="8.8.8.8")
         / UDP(sport=5000, dport=53) / DNS(rd=1, qd=DNSQR(qname=f"{label}.exfil.com"))
@@ -323,8 +324,9 @@ def _dns_query_packet(qname, t=1000.0, src="192.168.1.10"):
 
 def test_dns_tunnel_co_uk_two_domains():
     # Deux exfils vers des domaines co.uk différents → 2 alertes (1 avant, #25).
-    label1 = os.urandom(24).hex()
-    label2 = os.urandom(24).hex()
+    # Labels fixes à haute entropie (os.urandom rendait ce test flaky ~2 %).
+    label1 = "9f8e7d6c5b4a39281706a1b2c3d4e5f60718293a4b6c"
+    label2 = "13f9a2c4e6b8d05a7c3e9f1b4d6a8c0e2f5b7d94e6a"
     det = DnsTunnelDetector()
     alerts = det.inspect(1, _dns_query_packet(f"{label1}.evil.co.uk"))
     alerts += det.inspect(2, _dns_query_packet(f"{label2}.other.co.uk"))

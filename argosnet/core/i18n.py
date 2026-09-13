@@ -54,6 +54,15 @@ _EN: dict[str, str] = {
     "Résumé de la capture…": "Capture summary…",
     "Effacer l'historique des alertes": "Clear alert history",
     "Oublier les appareils connus": "Forget known devices",
+    "Mettre à jour la base constructeurs (OUI)…": "Update vendor database (OUI)…",
+    "Mettre à jour la base constructeurs": "Update vendor database",
+    "Télécharger la base des constructeurs depuis https://standards-oui.ieee.org (requête réseau) ?":
+        "Download the vendor database from https://standards-oui.ieee.org (network request)?",
+    "Mise à jour de la base constructeurs…": "Updating vendor database…",
+    "Base constructeurs mise à jour.": "Vendor database updated.",
+    "Mise à jour impossible": "Update failed",
+    "Échec du téléchargement de la base constructeurs. Vérifiez votre connexion.":
+        "Failed to download the vendor database. Check your connection.",
     # Messages / dialogues
     "Historique des alertes effacé.": "Alert history cleared.",
     "Appareils connus oubliés.": "Known devices forgotten.",
@@ -173,6 +182,14 @@ _EN: dict[str, str] = {
         "Scan of {ip} complete: {count} open port(s).",
     "Échec du scan.": "Scan failed.",
     "Scan impossible": "Scan failed",
+    "Cible invalide": "Invalid target",
+    "Cible invalide : utilisez une adresse IPv4 ou un sous-réseau CIDR (ex. 192.168.1.0/24).":
+        "Invalid target: use an IPv4 address or CIDR subnet (e.g. 192.168.1.0/24).",
+    "Cible refusée : 0.0.0.0, loopback, multicast et préfixes < /16 sont interdits.":
+        "Target refused: 0.0.0.0, loopback, multicast and prefixes < /16 are forbidden.",
+    "Confirmer le scan": "Confirm scan",
+    "Scanner {count} adresses ({network}) ? Vérifiez que vous êtes autorisé à scanner ce réseau.":
+        "Scan {count} addresses ({network})? Make sure you are authorized to scan this network.",
     # Éditeur de règles
     "Règles de détection (mini-IDS)": "Detection rules (mini-IDS)",
     "Chaque règle peut cibler un <b>port de destination</b> et/ou une "

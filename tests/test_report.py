@@ -27,3 +27,19 @@ def test_build_html_report_contains_sections_and_escapes():
     assert "ARP spoofing" in report
     assert "Mon PC" in report
     assert "&lt;b&gt;" in report          # échappement HTML des champs
+
+
+def test_csv_safe_neutralizes_formulas():
+    # Injection de formule via un champ réseau : préfixe apostrophe (#11).
+    from argosnet.core.report import csv_safe
+
+    assert csv_safe("=cmd|'/c calc'!A0") == "'=cmd|'/c calc'!A0"
+    assert csv_safe("+1+1") == "'+1+1"
+    assert csv_safe("-1") == "'-1"
+    assert csv_safe("@evil") == "'@evil"
+    assert csv_safe("\tcmd") == "'\tcmd"
+    assert csv_safe("\ncmd") == "'\ncmd"
+    assert csv_safe("domaine.evil.com") == "domaine.evil.com"
+    assert csv_safe("") == ""
+    assert csv_safe(123) == 123
+    assert csv_safe(None) is None

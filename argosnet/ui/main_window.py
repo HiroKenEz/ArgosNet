@@ -7,7 +7,7 @@ et persistées en base SQLite.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QHeaderView,
@@ -39,6 +39,20 @@ from argosnet.ui.dashboard_view import DashboardView
 from argosnet.ui.devices_view import DevicesView
 from argosnet.ui.network_map_view import NetworkMapView
 from argosnet.ui.scan_view import ScanView
+
+
+class _VendorDbUpdateThread(QThread):
+    """Télécharge la base OUI en arrière-plan (ne bloque pas l'interface)."""
+
+    finished_ok = Signal(bool)
+
+    def run(self) -> None:  # noqa: D102
+        from argosnet.core.oui import update_vendor_db
+
+        try:
+            self.finished_ok.emit(update_vendor_db())
+        except Exception:  # noqa: BLE001
+            self.finished_ok.emit(False)
 
 
 class MainWindow(QMainWindow):
@@ -178,6 +192,8 @@ class MainWindow(QMainWindow):
         clear_alerts.triggered.connect(self._clear_alert_history)
         forget_devices = history_menu.addAction(tr("Oublier les appareils connus"))
         forget_devices.triggered.connect(self._forget_devices)
+        update_oui = history_menu.addAction(tr("Mettre à jour la base constructeurs (OUI)…"))
+        update_oui.triggered.connect(self._update_vendor_db)
 
     def _build_language_menu(self, view_menu) -> None:
         from PySide6.QtGui import QActionGroup
@@ -215,6 +231,28 @@ class MainWindow(QMainWindow):
         self._db.clear_devices()
         self._seed_known_devices()
         self.statusBar().showMessage(tr("Appareils connus oubliés."), 4000)
+
+    def _update_vendor_db(self) -> None:
+        """Télécharge la base OUI après confirmation explicite (requête réseau)."""
+        answer = QMessageBox.question(
+            self, tr("Mettre à jour la base constructeurs"),
+            tr("Télécharger la base des constructeurs depuis https://standards-oui.ieee.org (requête réseau) ?"),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._oui_thread = _VendorDbUpdateThread(self)
+        self._oui_thread.finished_ok.connect(self._on_vendor_db_updated)
+        self._oui_thread.start()
+        self.statusBar().showMessage(tr("Mise à jour de la base constructeurs…"), 4000)
+
+    def _on_vendor_db_updated(self, ok: bool) -> None:
+        if ok:
+            self.statusBar().showMessage(tr("Base constructeurs mise à jour."), 5000)
+        else:
+            QMessageBox.warning(
+                self, tr("Mise à jour impossible"),
+                tr("Échec du téléchargement de la base constructeurs. Vérifiez votre connexion."),
+            )
 
     def closeEvent(self, event) -> None:  # noqa: N802
         from argosnet.core.geoip import close_readers

@@ -77,12 +77,18 @@ class AlertsView(QWidget):
 
     # ------------------------------------------------------------- API
     def add_alerts(self, alerts: list[Alert]) -> None:
-        for alert in alerts:
-            self._insert_alert(alert)
-            self._alerts.append(alert)
-        self._trim()
-        if alerts:
-            self._update_summary()
+        if not alerts:
+            return
+        # Insertion groupée sans rafraîchissement intermédiaire (flood SYN).
+        self._table.setUpdatesEnabled(False)
+        try:
+            for alert in alerts:
+                self._insert_alert(alert)
+                self._alerts.append(alert)
+            self._trim()
+        finally:
+            self._table.setUpdatesEnabled(True)
+        self._update_summary()
 
     def _on_double_click(self, row: int, _col: int) -> None:
         item = self._table.item(row, 4)  # colonne « N° paquet »
@@ -125,6 +131,8 @@ class AlertsView(QWidget):
 
     def export_csv(self, path: str) -> None:
         """Écrit toutes les alertes dans un fichier CSV (UTF-8 avec BOM pour Excel)."""
+        from argosnet.core.report import csv_safe
+
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as handle:
                 writer = csv.writer(handle, delimiter=";")
@@ -139,8 +147,9 @@ class AlertsView(QWidget):
                         else ""
                     )
                     writer.writerow(
-                        [hhmmss, alert.severity.label, alert.category, alert.source,
-                         alert.packet_number or "", alert.detail]
+                        [csv_safe(hhmmss), csv_safe(alert.severity.label),
+                         csv_safe(alert.category), csv_safe(alert.source),
+                         alert.packet_number or "", csv_safe(alert.detail)]
                     )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
