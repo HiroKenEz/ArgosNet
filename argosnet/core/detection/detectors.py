@@ -16,6 +16,7 @@ from argosnet.core.detection.alert import Alert, Severity
 try:
     from scapy.layers.l2 import ARP, Ether
     from scapy.layers.inet import ICMP, IP, TCP, UDP
+    from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
     from scapy.packet import Raw
     _SCAPY_OK = True
 except Exception:  # pragma: no cover
@@ -51,6 +52,7 @@ PORTKNOCK_MIN_PORT = 1024   # les « coups » visent des ports hauts/inhabituels
 BASELINE_LEARN_SECONDS = 30.0   # durée d'apprentissage (secondes de trafic observé)
 BASELINE_MIN_RATE = 20          # plancher : pas d'alerte sous ce pic (paquets/s)
 BASELINE_FACTOR = 5.0           # multiple de la moyenne apprise déclenchant l'anomalie
+BASELINE_REALERT_SECONDS = 300.0  # délai avant de réalerte une même source
 
 SYN = 0x02
 ACK = 0x10
@@ -58,6 +60,26 @@ ACK = 0x10
 # Purge périodique des fenêtres glissantes : évite que les dictionnaires d'état
 # accumulent une clé par IP vue « à vie » lors d'une capture longue durée.
 CLEANUP_EVERY = 2000
+
+# Plafond des tables indexées par une adresse que l'attaquant contrôle
+# (``ArpSpoof.ip_to_mac``, ``Baseline.learn_counts/baseline``) : au-delà, on
+# n'apprend plus de nouvelles clés, sans lever d'erreur (anti-exhaustion mémoire).
+MAX_TRACKED_KEYS = 50_000
+
+
+def _bounded_add(mapping: dict, key: Any, value: Any) -> None:
+    """Associe ``key -> value`` si la clé existe déjà ou si le plafond n'est pas atteint."""
+    if key in mapping or len(mapping) < MAX_TRACKED_KEYS:
+        mapping[key] = value
+
+
+def _ip_layer(pkt: Any) -> Any | None:
+    """Couche réseau (IPv4 ou IPv6) d'un paquet, ou ``None`` si absente."""
+    if pkt.haslayer(IP):
+        return pkt.getlayer(IP)
+    if pkt.haslayer(IPv6):
+        return pkt.getlayer(IPv6)
+    return None
 
 
 def _pkt_time(pkt: Any) -> float:
@@ -123,7 +145,7 @@ class ArpSpoofDetector(Detector):
                     )
                 ]
         else:
-            self.ip_to_mac[ip] = mac
+            _bounded_add(self.ip_to_mac, ip, mac)
         return []
 
 
@@ -137,14 +159,16 @@ class PortScanDetector(Detector):
         self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+        if not pkt.haslayer(TCP):
+            return []
+        ip = _ip_layer(pkt)
+        if ip is None:
             return []
         tcp = pkt.getlayer(TCP)
         flags = int(tcp.flags)
         if not (flags & SYN) or (flags & ACK):  # SYN pur (pas SYN/ACK)
             return []
-        src = pkt.getlayer(IP).src
-        dst = pkt.getlayer(IP).dst
+        src, dst = ip.src, ip.dst
         now = _pkt_time(pkt)
 
         self._n += 1
@@ -192,14 +216,20 @@ class HostSweepDetector(Detector):
         if pkt.haslayer(ARP) and int(pkt.getlayer(ARP).op) == 1:
             arp = pkt.getlayer(ARP)
             src, dst = arp.psrc, arp.pdst
-        elif pkt.haslayer(IP) and pkt.haslayer(ICMP) and int(pkt.getlayer(ICMP).type) == 8:
-            ip = pkt.getlayer(IP)
-            src, dst = ip.src, ip.dst
-        elif pkt.haslayer(IP) and pkt.haslayer(TCP):
-            tcp = pkt.getlayer(TCP)
-            if (int(tcp.flags) & SYN) and not (int(tcp.flags) & ACK):
-                ip = pkt.getlayer(IP)
+        elif pkt.haslayer(ICMPv6EchoRequest):
+            ip = _ip_layer(pkt)
+            if ip is not None:
                 src, dst = ip.src, ip.dst
+        elif pkt.haslayer(ICMP) and int(pkt.getlayer(ICMP).type) == 8:
+            ip = _ip_layer(pkt)
+            if ip is not None:
+                src, dst = ip.src, ip.dst
+        elif pkt.haslayer(TCP):
+            ip = _ip_layer(pkt)
+            if ip is not None:
+                tcp = pkt.getlayer(TCP)
+                if (int(tcp.flags) & SYN) and not (int(tcp.flags) & ACK):
+                    src, dst = ip.src, ip.dst
         if not src or not dst:
             return []
 
@@ -221,7 +251,7 @@ class HostSweepDetector(Detector):
                     source=src,
                     detail=(
                         f"{src} a contacté {len(hosts)} hôtes différents "
-                        f"en moins de {PORTSCAN_WINDOW:.0f}s (découverte/scan réseau)."
+                        f"en moins de {HOSTSWEEP_WINDOW:.0f}s (découverte/scan réseau)."
                     ),
                     timestamp=now,
                     packet_number=number,
@@ -239,12 +269,15 @@ class SynFloodDetector(Detector):
         self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+        if not pkt.haslayer(TCP):
+            return []
+        ip = _ip_layer(pkt)
+        if ip is None:
             return []
         tcp = pkt.getlayer(TCP)
         if not (int(tcp.flags) & SYN) or (int(tcp.flags) & ACK):
             return []
-        dst = pkt.getlayer(IP).dst
+        dst = ip.dst
         now = _pkt_time(pkt)
 
         self._n += 1
@@ -306,14 +339,17 @@ class NewDeviceDetector(Detector):
         ]
 
     def reset(self) -> None:
-        self.known = set()
+        # L'inventaire n'est pas un état d'exécution : il survit à « Effacer ».
+        # « Oublier les appareils connus » réassigne explicitement ``known``
+        # (voir ``MainWindow._seed_known_devices``).
+        pass
 
 
 class CleartextCredsDetector(Detector):
     """Repère des identifiants transmis en clair (HTTP Basic, FTP, Telnet)."""
 
     def __init__(self) -> None:
-        self._alerted: set[int] = set()
+        self._alerted: set[tuple] = set()
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         if not pkt.haslayer(Raw):
@@ -335,11 +371,12 @@ class CleartextCredsDetector(Detector):
                 reason, kind = "Commande FTP/Telnet PASS (mot de passe en clair).", "ftp-pass"
         if reason is None:
             return []
-        src = pkt.getlayer(IP).src if pkt.haslayer(IP) else "?"
-        dst = pkt.getlayer(IP).dst if pkt.haslayer(IP) else "?"
+        layer = _ip_layer(pkt)
+        src = layer.src if layer is not None else "?"
+        dst = layer.dst if layer is not None else "?"
         # Une seule alerte par (source, destination, type) : évite le spam sur une
         # session répétant le même en-tête d'authentification.
-        key = hash((src, dst, kind))
+        key = (src, dst, kind)
         if key in self._alerted:
             return []
         self._alerted.add(key)
@@ -362,11 +399,15 @@ class SignatureDetector(Detector):
     """Détecteur générique piloté par des règles (rules.yaml).
 
     Chaque règle peut cibler un ``dst_port`` et/ou une sous-chaîne ``contains``
-    dans la charge utile, avec un ``severity`` et un ``message``.
+    dans la charge utile, avec un ``severity`` et un ``message``. Les règles
+    invalides sont ignorées au chargement (voir :func:`_sanitize_rule`) et chaque
+    règle est évaluée dans son propre ``try`` : une règle cassée n'aveugle plus
+    les autres.
     """
 
     def __init__(self, rules: list[dict] | None = None) -> None:
-        self.rules = rules if rules is not None else load_rules()
+        raw = rules if rules is not None else load_rules()
+        self.rules = [r for r in (_sanitize_rule(entry) for entry in raw) if r is not None]
         self._alerted: set[tuple] = set()
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
@@ -384,31 +425,39 @@ class SignatureDetector(Detector):
 
         alerts: list[Alert] = []
         for rule in self.rules:
-            rule_port = rule.get("dst_port")
-            rule_contains = rule.get("contains")
-            if rule_port is not None and dport != int(rule_port):
-                continue
-            if rule_contains and rule_contains.lower().encode() not in payload:
-                continue
-            if rule_port is None and not rule_contains:
-                continue  # règle vide, ignorée
-
-            src = pkt.getlayer(IP).src if pkt.haslayer(IP) else "?"
-            key = (rule.get("name"), src, dport)
-            if key in self._alerted:
-                continue
-            self._alerted.add(key)
-            alerts.append(
-                Alert(
-                    severity=_severity_from_str(rule.get("severity", "warning")),
-                    category=rule.get("name", "Règle de signature"),
-                    source=src,
-                    detail=rule.get("message", "Correspondance de signature."),
-                    timestamp=_pkt_time(pkt),
-                    packet_number=number,
-                )
-            )
+            try:
+                alert = self._match_rule(rule, number, pkt, dport, payload)
+            except Exception:
+                continue  # une règle cassée n'aveugle pas les autres
+            if alert is not None:
+                alerts.append(alert)
         return alerts
+
+    def _match_rule(self, rule: dict, number: int, pkt: Any, dport: int | None, payload: bytes) -> Alert | None:
+        """Évalue une règle (déjà assainie) contre un paquet."""
+        rule_port = rule.get("dst_port")
+        rule_contains = rule.get("contains")
+        if rule_port is not None and dport != int(rule_port):
+            return None
+        if rule_contains and rule_contains.lower().encode() not in payload:
+            return None
+        if rule_port is None and not rule_contains:
+            return None  # règle vide, ignorée
+
+        layer = _ip_layer(pkt)
+        src = layer.src if layer is not None else "?"
+        key = (rule.get("name"), src, dport)
+        if key in self._alerted:
+            return None
+        self._alerted.add(key)
+        return Alert(
+            severity=_severity_from_str(rule.get("severity", "warning")),
+            category=rule.get("name", "Règle de signature"),
+            source=src,
+            detail=rule.get("message", "Correspondance de signature."),
+            timestamp=_pkt_time(pkt),
+            packet_number=number,
+        )
 
     def reset(self) -> None:
         self._alerted = set()
@@ -446,11 +495,27 @@ def _dns_query_name(pkt) -> str | None:
         return None
 
 
+# Suffixes de second niveau courants (co.uk, com.au…) : le domaine enregistré
+# prend alors 3 labels au lieu de 2, sans dépendance externe.
+_SECOND_LEVEL_SUFFIXES = frozenset({"co", "com", "net", "org", "gov", "ac", "edu"})
+
+
+def _registered_domain(labels: list[str]) -> str:
+    """Domaine enregistré d'un nom découpé en labels (gestion co.uk & co)."""
+    if (
+        len(labels) >= 3
+        and labels[-2].lower() in _SECOND_LEVEL_SUFFIXES
+        and len(labels[-1]) == 2
+    ):
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
 class DnsTunnelDetector(Detector):
     """Détecte l'exfiltration via DNS : sous-domaines longs et à haute entropie."""
 
     def __init__(self) -> None:
-        self._alerted: set[str] = set()
+        self._alerted: set[tuple] = set()
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
         qname = _dns_query_name(pkt)
@@ -459,21 +524,24 @@ class DnsTunnelDetector(Detector):
         labels = qname.split(".")
         if len(labels) < 3:
             return []
-        registered = ".".join(labels[-2:])
-        sub_labels = labels[:-2]
+        registered = _registered_domain(labels)
+        sub_labels = labels[: -len(registered.split("."))]
         longest = max(sub_labels, key=len) if sub_labels else ""
         if len(longest) >= DNS_TUNNEL_LABEL_LEN and _entropy(longest) >= DNS_TUNNEL_ENTROPY:
-            if registered in self._alerted:
+            layer = _ip_layer(pkt)
+            client = layer.src if layer is not None else "?"
+            key = (client, registered.lower())
+            if key in self._alerted:
                 return []
-            self._alerted.add(registered)
+            self._alerted.add(key)
             return [
                 Alert(
                     severity=Severity.WARNING,
                     category="Tunneling DNS",
-                    source=registered,
+                    source=client,
                     detail=(
-                        f"Requête DNS avec un sous-domaine long et aléatoire vers « {registered} » "
-                        "— possible exfiltration de données via DNS."
+                        f"Requête DNS de {client} avec un sous-domaine long et aléatoire "
+                        f"vers « {registered} » — possible exfiltration de données via DNS."
                     ),
                     timestamp=_pkt_time(pkt),
                     packet_number=number,
@@ -494,12 +562,14 @@ class BeaconDetector(Detector):
         self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+        if not pkt.haslayer(TCP):
+            return []
+        ip = _ip_layer(pkt)
+        if ip is None:
             return []
         tcp = pkt.getlayer(TCP)
         if not (int(tcp.flags) & SYN) or (int(tcp.flags) & ACK):
             return []
-        ip = pkt.getlayer(IP)
         key = (ip.src, ip.dst, int(tcp.dport))
         now = _pkt_time(pkt)
 
@@ -561,6 +631,7 @@ class RogueDhcpDetector(Detector):
         self.servers.add(server)
         if not already_known and len(self.servers) > 1 and server not in self._alerted:
             self._alerted.add(server)
+            seen = ", ".join(sorted(self.servers))
             return [
                 Alert(
                     severity=Severity.CRITICAL,
@@ -568,7 +639,9 @@ class RogueDhcpDetector(Detector):
                     source=server,
                     detail=(
                         f"Un second serveur DHCP répond sur le réseau ({server}). "
-                        "Possible serveur DHCP pirate (attaque de l'homme du milieu)."
+                        f"Serveurs vus : {seen}. Le premier serveur vu n'est pas "
+                        "forcément le légitime : vérifiez quel serveur est autorisé "
+                        "(possible serveur DHCP pirate, attaque de l'homme du milieu)."
                     ),
                     timestamp=_pkt_time(pkt),
                     packet_number=number,
@@ -609,9 +682,11 @@ class BlocklistDetector(Detector):
         self._alerted: set[str] = set()
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not self.blocklist or not pkt.haslayer(IP):
+        if not self.blocklist:
             return []
-        ip = pkt.getlayer(IP)
+        ip = _ip_layer(pkt)
+        if ip is None:
+            return []
         for addr in (ip.src, ip.dst):
             if addr in self.blocklist and addr not in self._alerted:
                 self._alerted.add(addr)
@@ -651,7 +726,10 @@ class PortKnockDetector(Detector):
         self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not (pkt.haslayer(IP) and pkt.haslayer(TCP)):
+        if not pkt.haslayer(TCP):
+            return []
+        ip = _ip_layer(pkt)
+        if ip is None:
             return []
         tcp = pkt.getlayer(TCP)
         if not (int(tcp.flags) & SYN) or (int(tcp.flags) & ACK):  # SYN pur
@@ -659,7 +737,6 @@ class PortKnockDetector(Detector):
         dport = int(tcp.dport)
         if dport < PORTKNOCK_MIN_PORT:
             return []
-        ip = pkt.getlayer(IP)
         src, dst = ip.src, ip.dst
         now = _pkt_time(pkt)
 
@@ -672,16 +749,18 @@ class PortKnockDetector(Detector):
         while window and now - window[0][0] > PORTKNOCK_WINDOW:
             window.popleft()
 
-        ports = [p for _, p in window]
-        distinct = set(ports)
-        # Séquence courte de ports distincts, chacun frappé une seule fois.
+        # Les retransmissions SYN répètent le même port : on dédoublonne les coups
+        # consécutifs avant d'exiger des ports distincts (sinon un retry annule tout).
+        sequence = [p for _, p in window]
+        deduped = [p for i, p in enumerate(sequence) if i == 0 or p != sequence[i - 1]]
+        distinct = set(deduped)
         if (
             (src, dst) not in self._alerted
             and PORTKNOCK_MIN_PORTS <= len(distinct) <= PORTKNOCK_MAX_PORTS
-            and len(ports) == len(distinct)
+            and len(deduped) == len(distinct)
         ):
             self._alerted.add((src, dst))
-            sequence = " → ".join(str(p) for _, p in window)
+            shown = " → ".join(str(p) for p in deduped)
             return [
                 Alert(
                     severity=Severity.WARNING,
@@ -689,7 +768,7 @@ class PortKnockDetector(Detector):
                     source=src,
                     detail=(
                         f"{src} a frappé une séquence de {len(distinct)} ports hauts sur {dst} "
-                        f"({sequence}) en moins de {PORTKNOCK_WINDOW:.0f}s — possible port knocking "
+                        f"({shown}) en moins de {PORTKNOCK_WINDOW:.0f}s — possible port knocking "
                         "(ouverture furtive d'un accès)."
                     ),
                     timestamp=now,
@@ -751,7 +830,8 @@ class Ja3BlocklistDetector(Detector):
         digest = result[1].lower()
         if digest not in self.blocklist:
             return []
-        src = pkt.getlayer(IP).src if pkt.haslayer(IP) else "?"
+        layer = _ip_layer(pkt)
+        src = layer.src if layer is not None else "?"
         key = (src, digest)
         if key in self._alerted:
             return []
@@ -782,24 +862,32 @@ class BaselineAnomalyDetector(Detector):
     débit instantané (fenêtre glissante d'une seconde) dépasse ``BASELINE_FACTOR`` fois
     sa moyenne apprise — et un plancher ``BASELINE_MIN_RATE`` — est signalée. Approche
     heuristique : le pic est jugé relativement au comportement habituel de la source.
+
+    Limites assumées : un pic **pendant** l'apprentissage fausse la moyenne apprise
+    (empoisonnement) et peut aveugler la détection pour cette source ; les paquets
+    antérieurs au début observé (pcap désordonné) sont ignorés. Une source réalerte
+    au plus toutes les ``BASELINE_REALERT_SECONDS`` secondes.
     """
 
     def __init__(self) -> None:
         self.events: dict[str, deque] = defaultdict(deque)  # src -> temps (fenêtre 1 s)
         self.learn_counts: dict[str, int] = defaultdict(int)
         self.baseline: dict[str, float] = {}                # src -> débit moyen appris
-        self._alerted: set[str] = set()
+        self._last_alert: dict[str, float] = {}             # src -> temps de la dernière alerte
         self._t0: float | None = None
         self._n = 0
 
     def inspect(self, number: int, pkt: Any) -> list[Alert]:
-        if not pkt.haslayer(IP):
+        layer = _ip_layer(pkt)
+        if layer is None:
             return []
-        src = pkt.getlayer(IP).src
+        src = layer.src
         now = _pkt_time(pkt)
         if self._t0 is None:
             self._t0 = now
         elapsed = now - self._t0
+        if elapsed < 0:
+            return []  # paquet hors-ordre (pcap désordonné) : ignoré
 
         self._n += 1
         if self._n % CLEANUP_EVERY == 0:
@@ -813,29 +901,31 @@ class BaselineAnomalyDetector(Detector):
 
         if elapsed < BASELINE_LEARN_SECONDS:
             # Phase d'apprentissage : on compte, on n'alerte pas.
-            self.learn_counts[src] += 1
+            _bounded_add(self.learn_counts, src, self.learn_counts.get(src, 0) + 1)
             return []
 
         base = self.baseline.get(src)
         if base is None:
             base = self.learn_counts.get(src, 0) / BASELINE_LEARN_SECONDS
-            self.baseline[src] = base
+            _bounded_add(self.baseline, src, base)
         threshold = max(BASELINE_MIN_RATE, BASELINE_FACTOR * base)
-        if rate >= threshold and src not in self._alerted:
-            self._alerted.add(src)
-            return [
-                Alert(
-                    severity=Severity.WARNING,
-                    category="Anomalie de trafic",
-                    source=src,
-                    detail=(
-                        f"{src} émet {rate} paquets/s, très au-dessus de son débit habituel "
-                        f"(~{base:.1f}/s appris) — pic de trafic anormal."
-                    ),
-                    timestamp=now,
-                    packet_number=number,
-                )
-            ]
+        if rate >= threshold:
+            last = self._last_alert.get(src)
+            if last is None or now - last >= BASELINE_REALERT_SECONDS:
+                self._last_alert[src] = now
+                return [
+                    Alert(
+                        severity=Severity.WARNING,
+                        category="Anomalie de trafic",
+                        source=src,
+                        detail=(
+                            f"{src} émet {rate} paquets/s, très au-dessus de son débit habituel "
+                            f"(~{base:.1f}/s appris) — pic de trafic anormal."
+                        ),
+                        timestamp=now,
+                        packet_number=number,
+                    )
+                ]
         return []
 
     def reset(self) -> None:
@@ -848,6 +938,63 @@ def _severity_from_str(value: str) -> Severity:
         "warning": Severity.WARNING,
         "critical": Severity.CRITICAL,
     }.get(str(value).lower(), Severity.WARNING)
+
+
+_VALID_SEVERITIES = ("info", "warning", "critical")
+_MAX_CONTAINS_LEN = 512
+
+
+def _sanitize_rule(rule: Any) -> dict | None:
+    """Normalise une règle IDS, ou ``None`` si elle est invalide (ignorée, sans lever).
+
+    Valide : ``rules`` = liste de dicts ; ``dst_port`` entier 0–65535 ou absent ;
+    ``contains`` chaîne non vide ≤ 512 caractères ou absent ; au moins l'un des
+    deux présent ; ``severity`` ∈ info/warning/critical (sinon warning) ;
+    ``name``/``message`` convertis en chaînes.
+    """
+    if not isinstance(rule, dict):
+        return None
+    port = rule.get("dst_port")
+    if port is None:
+        port_int = None
+    elif isinstance(port, bool):
+        return None
+    elif isinstance(port, int):
+        port_int = port
+    elif isinstance(port, str) and port.strip().isdigit():
+        port_int = int(port.strip())
+    else:
+        return None
+    if port_int is not None and not 0 <= port_int <= 65535:
+        return None
+    contains = rule.get("contains")
+    if contains is not None:
+        if not isinstance(contains, str) or not contains.strip() or len(contains) > _MAX_CONTAINS_LEN:
+            return None
+    if port_int is None and not contains:
+        return None  # règle vide, ignorée
+    severity = str(rule.get("severity", "warning")).lower()
+    if severity not in _VALID_SEVERITIES:
+        severity = "warning"
+    clean: dict = {
+        "name": str(rule.get("name") or "Règle de signature"),
+        "severity": severity,
+        "message": str(rule.get("message") or "Correspondance de signature."),
+    }
+    if port_int is not None:
+        clean["dst_port"] = port_int
+    if contains:
+        clean["contains"] = contains
+    return clean
+
+
+def port_text_to_int(text: str) -> int | None:
+    """Convertit un port saisi dans l'éditeur de règles, ou ``None`` si invalide."""
+    text = (text or "").strip()
+    if not text.isdigit():
+        return None
+    value = int(text)
+    return value if 0 <= value <= 65535 else None
 
 
 USER_RULES_PATH = os.path.join(os.path.expanduser("~"), ".argosnet", "rules.yaml")
@@ -863,6 +1010,7 @@ def load_rules(path: str | None = None) -> list[dict]:
 
     Sans chemin, privilégie les règles **utilisateur** (``~/.argosnet/rules.yaml``,
     éditables dans l'UI) et retombe sur les règles livrées avec l'application.
+    Les règles invalides sont ignorées silencieusement (jamais d'exception).
     """
     if path is None:
         path = USER_RULES_PATH if os.path.exists(USER_RULES_PATH) else bundled_rules_path()
@@ -870,7 +1018,12 @@ def load_rules(path: str | None = None) -> list[dict]:
         import yaml
         with open(path, "r", encoding="utf-8") as handle:
             data = yaml.safe_load(handle) or {}
-        return list(data.get("rules", []))
+        if not isinstance(data, dict):
+            return []
+        raw = data.get("rules", [])
+        if not isinstance(raw, list):
+            return []
+        return [r for r in (_sanitize_rule(entry) for entry in raw) if r is not None]
     except Exception:
         return []
 

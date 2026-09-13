@@ -190,6 +190,9 @@ _EN: dict[str, str] = {
     "Enregistrer": "Save",
     "Annuler": "Cancel",
     "Enregistrement impossible": "Save failed",
+    "Port invalide": "Invalid port",
+    "Le port de la ligne {row} est invalide : indiquez un entier entre 0 et 65535.":
+        "Invalid port on row {row}: enter an integer between 0 and 65535.",
     # Éditeur de couleurs
     "Couleurs des protocoles": "Protocol colors",
     "Cliquez une couleur pour la modifier.": "Click a color to change it.",
